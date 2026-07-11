@@ -1,0 +1,59 @@
+name: Build NN6000 V2 OpenWrt
+
+
+on:
+  workflow_dispatch:
+
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-22.04
+
+
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v5
+
+
+    - name: Clone OpenWrt
+      run: |
+        git clone https://github.com/openwrt/openwrt.git
+        cd openwrt
+        git checkout ab08f6a524
+
+
+    - name: Prepare feeds
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+
+    - name: Apply config
+      run: |
+        cp .config openwrt/.config
+
+
+    - name: Check device
+      run: |
+        cd openwrt
+        make defconfig
+        echo "========== DEVICE =========="
+        grep TARGET_DEVICE .config || true
+
+
+    - name: Build
+      run: |
+        cd openwrt
+        make download -j8
+        make -j$(nproc)
+
+
+    - name: Upload
+      uses: actions/upload-artifact@v5
+      with:
+        name: NN6000-V2-openwrt
+        path: openwrt/bin/targets/
