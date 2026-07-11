@@ -1,4 +1,4 @@
-name: Build ImmortalWrt NN6000 V2 kmod for DAED
+name: Build ImmortalWrt NN6000 V2 DAED kmods
 
 on:
   workflow_dispatch:
@@ -12,11 +12,11 @@ jobs:
 
       - name: Clone ImmortalWrt
         run: |
-          git clone --depth=1 \
+          git clone --depth=20 \
           https://github.com/immortalwrt/immortalwrt.git source
 
 
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
           sudo apt update
 
@@ -62,18 +62,14 @@ jobs:
           echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
 
 
-          #
           # LuCI
-          #
 
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_PACKAGE_luci-base=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
 
 
-          #
-          # DAED 需要的 kernel module
-          #
+          # DAED 依赖 kmod
 
           echo "CONFIG_PACKAGE_kmod-sched-core=y" >> .config
           echo "CONFIG_PACKAGE_kmod-sched-bpf=y" >> .config
@@ -82,9 +78,7 @@ jobs:
           echo "CONFIG_PACKAGE_kmod-nft-bridge=y"
 
 
-          #
           # BPF / XDP
-          #
 
           echo "CONFIG_KERNEL_BPF=y" >> .config
           echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
@@ -92,9 +86,7 @@ jobs:
           echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
 
 
-          #
-          # 基础工具
-          #
+          # 常用工具
 
           echo "CONFIG_PACKAGE_ca-bundle=y" >> .config
           echo "CONFIG_PACKAGE_curl=y" >> .config
@@ -102,9 +94,7 @@ jobs:
           echo "CONFIG_PACKAGE_nano=y" >> .config
 
 
-          #
           # 不使用 zram
-          #
 
           echo "# CONFIG_PACKAGE_zram-swap is not set" >> .config
 
@@ -129,7 +119,7 @@ jobs:
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: NN6000-V2-kmod-DAED
+          name: NN6000-V2-kmods
           path: |
             source/bin/targets/qualcommax/ipq60xx/*-sysupgrade.bin
             source/bin/targets/qualcommax/ipq60xx/*-initramfs*
