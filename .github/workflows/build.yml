@@ -1,0 +1,178 @@
+name: Build ImmortalWrt 25.12 NN6000 V2 daed
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+
+    - name: Checkout ImmortalWrt
+      uses: actions/checkout@v4
+      with:
+        repository: immortalwrt/immortalwrt
+        ref: openwrt-25.12
+
+
+    - name: Install Build Dependencies
+      run: |
+        sudo apt update
+
+        sudo apt install -y \
+        build-essential \
+        clang \
+        flex \
+        bison \
+        gawk \
+        gcc-multilib \
+        g++-multilib \
+        gettext \
+        git \
+        libncurses-dev \
+        libssl-dev \
+        python3 \
+        python3-pip \
+        python3-pyelftools \
+        python3-setuptools \
+        rsync \
+        unzip \
+        wget \
+        zstd \
+        file
+
+
+    - name: Update Feeds
+      run: |
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+
+    - name: Add DAED Feed
+      run: |
+
+        echo "src-git daed https://github.com/daeuniverse/dae-openwrt.git" >> feeds.conf.default
+
+        ./scripts/feeds update daed
+
+        ./scripts/feeds install -a -p daed
+
+
+
+    - name: Configure NN6000 V2
+      run: |
+
+        cat > .config <<'EOF'
+
+
+# =========================
+# Target NN6000 V2
+# =========================
+
+CONFIG_TARGET_qualcommax=y
+CONFIG_TARGET_qualcommax_ipq60xx=y
+CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_8devices_mango-dvk=y
+
+
+# =========================
+# Image
+# =========================
+
+CONFIG_TARGET_IMAGES_GZIP=y
+CONFIG_TARGET_IMAGES_PAD=y
+
+
+# =========================
+# LuCI
+# =========================
+
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-base=y
+CONFIG_PACKAGE_luci-compat=y
+CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+
+
+# =========================
+# DAED
+# =========================
+
+CONFIG_PACKAGE_daed=y
+CONFIG_PACKAGE_luci-app-daed=y
+
+
+# =========================
+# DAED Geo
+# =========================
+
+CONFIG_PACKAGE_dae-geoip=y
+CONFIG_PACKAGE_dae-geosite=y
+
+
+# =========================
+# Network
+# =========================
+
+CONFIG_PACKAGE_dnsmasq-full=y
+CONFIG_PACKAGE_ip-full=y
+CONFIG_PACKAGE_curl=y
+CONFIG_PACKAGE_ca-bundle=y
+
+
+# =========================
+# Kernel
+# =========================
+
+CONFIG_PACKAGE_kmod-tun=y
+
+
+# =========================
+# Tools
+# =========================
+
+CONFIG_PACKAGE_htop=y
+CONFIG_PACKAGE_nano=y
+
+
+# =========================
+# No ZRAM
+# =========================
+
+# CONFIG_PACKAGE_zram-swap is not set
+
+
+# =========================
+# No Heavy Packages
+# =========================
+
+# CONFIG_PACKAGE_openclash is not set
+# CONFIG_PACKAGE_passwall is not set
+# CONFIG_PACKAGE_adguardhome is not set
+
+
+EOF
+
+
+        make defconfig
+
+
+
+    - name: Download Packages
+      run: |
+        make download -j8
+
+
+    - name: Compile
+      run: |
+        make -j$(nproc) V=s
+
+
+
+    - name: Upload Firmware
+      uses: actions/upload-artifact@v4
+
+      with:
+        name: ImmortalWrt-NN6000V2-25.12-daed
+
+        path: |
+          bin/targets/qualcommax/ipq60xx/*
