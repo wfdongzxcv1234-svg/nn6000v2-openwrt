@@ -1,0 +1,105 @@
+name: Build ImmortalWrt 25.12 NN6000 V2
+
+
+on:
+  workflow_dispatch:
+
+
+jobs:
+  build:
+
+    runs-on: ubuntu-22.04
+
+
+    steps:
+
+      - name: Checkout ImmortalWrt 25.12
+        uses: actions/checkout@v4
+        with:
+          repository: immortalwrt/immortalwrt
+          ref: openwrt-25.12
+          fetch-depth: 1
+
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+
+          sudo apt install -y \
+            build-essential \
+            clang \
+            flex \
+            bison \
+            gawk \
+            gcc-multilib \
+            g++-multilib \
+            gettext \
+            git \
+            libncurses-dev \
+            libssl-dev \
+            python3 \
+            python3-pip \
+            python3-pyelftools \
+            python3-setuptools \
+            rsync \
+            unzip \
+            wget \
+            zstd \
+            file
+
+
+      - name: Update feeds
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+
+      - name: Configure NN6000 V2
+        run: |
+          printf '%s\n' \
+          'CONFIG_TARGET_qualcommax=y' \
+          'CONFIG_TARGET_qualcommax_ipq60xx=y' \
+          'CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_8devices_mango-dvk=y' \
+          '' \
+          'CONFIG_PACKAGE_luci=y' \
+          'CONFIG_PACKAGE_luci-base=y' \
+          'CONFIG_PACKAGE_luci-compat=y' \
+          'CONFIG_PACKAGE_luci-i18n-base-zh-cn=y' \
+          '' \
+          'CONFIG_PACKAGE_dnsmasq-full=y' \
+          'CONFIG_PACKAGE_ip-full=y' \
+          'CONFIG_PACKAGE_curl=y' \
+          'CONFIG_PACKAGE_ca-bundle=y' \
+          '' \
+          'CONFIG_PACKAGE_kmod-tun=y' \
+          '' \
+          'CONFIG_PACKAGE_htop=y' \
+          'CONFIG_PACKAGE_nano=y' \
+          'CONFIG_PACKAGE_tcpdump=y' \
+          '' \
+          'CONFIG_PACKAGE_block-mount=y' \
+          '' \
+          'CONFIG_TARGET_IMAGES_GZIP=y' \
+          'CONFIG_TARGET_IMAGES_PAD=y' \
+          > .config
+
+
+          make defconfig
+
+
+      - name: Download packages
+        run: |
+          make download -j8
+
+
+      - name: Compile firmware
+        run: |
+          make -j$(nproc) V=s
+
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImmortalWrt-NN6000V2-25.12
+          path: |
+            bin/targets/qualcommax/ipq60xx/*
