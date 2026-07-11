@@ -1,0 +1,22 @@
+name: Build OpenWrt NN6000 V2
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Build OpenWrt
+      uses: P3TERX/Actions-OpenWrt@main
+      env:
+        OPENWRT_REPO_URL: https://github.com/openwrt/openwrt
+        OPENWRT_REPO_BRANCH: openwrt-25.12
+        CONFIG_FILE: .config
+        DIY_P1_SH: false
+        DIY_P2_SH: false
