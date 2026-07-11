@@ -1,0 +1,113 @@
+name: Build ImmortalWrt NN6000 V2 DAED
+
+
+on:
+  workflow_dispatch:
+
+
+jobs:
+  build:
+
+    runs-on: ubuntu-22.04
+
+
+    steps:
+
+      - name: Clone ImmortalWrt
+        run: |
+          git clone --depth=1 https://github.com/immortalwrt/immortalwrt.git source
+
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+
+          sudo apt install -y \
+            build-essential \
+            clang \
+            flex \
+            bison \
+            gawk \
+            gettext \
+            git \
+            libncurses-dev \
+            libssl-dev \
+            python3 \
+            python3-pyelftools \
+            rsync \
+            unzip \
+            wget \
+            zstd \
+            file
+
+
+      - name: Add daed feed
+        run: |
+          cd source
+
+          echo "src-git daed https://github.com/daeuniverse/dae-openwrt.git" >> feeds.conf.default
+
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+
+      - name: Configure NN6000 V2 DAED
+        run: |
+          cd source
+
+          echo "CONFIG_TARGET_qualcommax=y" > .config
+          echo "CONFIG_TARGET_qualcommax_ipq60xx=y" >> .config
+          echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
+
+
+          echo "CONFIG_PACKAGE_luci=y" >> .config
+          echo "CONFIG_PACKAGE_luci-base=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-daed=y" >> .config
+          echo "CONFIG_PACKAGE_luci-i18n-daed-zh-cn=y" >> .config
+
+
+          echo "CONFIG_PACKAGE_daed=y" >> .config
+          echo "CONFIG_PACKAGE_daed-geoip=y" >> .config
+          echo "CONFIG_PACKAGE_daed-geosite=y" >> .config
+
+
+          echo "CONFIG_PACKAGE_kmod-sched-core=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-bpf=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-veth=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-xdp-sockets-diag=y" >> .config
+
+
+          echo "CONFIG_KERNEL_BPF=y" >> .config
+          echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
+          echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
+
+
+          echo "CONFIG_PACKAGE_curl=y" >> .config
+          echo "CONFIG_PACKAGE_ca-bundle=y" >> .config
+
+
+          echo "CONFIG_PACKAGE_htop=y" >> .config
+          echo "CONFIG_PACKAGE_nano=y" >> .config
+
+
+          make defconfig
+
+
+      - name: Download
+        run: |
+          cd source
+          make download -j8
+
+
+      - name: Compile
+        run: |
+          cd source
+          make -j$(nproc) V=s
+
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: NN6000-V2-ImmortalWrt-DAED
+          path: |
+            source/bin/targets/qualcommax/ipq60xx/*
