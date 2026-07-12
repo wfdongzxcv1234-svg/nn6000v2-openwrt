@@ -90,8 +90,7 @@ jobs:
          echo "CONFIG_KERNEL_DEBUG_INFO=y" >> .config
          echo "CONFIG_KERNEL_DEBUG_INFO_BTF=y" >> .config
          echo "CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES=y" >> .config
-
-        echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
+         echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
           
 
 
