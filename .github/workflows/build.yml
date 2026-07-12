@@ -1,6 +1,6 @@
-name: Build ImmortalWrt NN6000 V2 DAED BTF
+name: Build ImmortalWrt NN6000 V2 DAED kmods
 
-"on":
+on:
   workflow_dispatch:
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
 
       - name: Clone ImmortalWrt
         run: |
-          git clone --depth=1 \
+          git clone --depth=20 \
           https://github.com/immortalwrt/immortalwrt.git source
 
 
@@ -41,6 +41,7 @@ jobs:
             zlib1g-dev \
             file \
             zstd \
+            pahole \
             dwarves
 
 
@@ -48,7 +49,8 @@ jobs:
         run: |
           cd source
 
-          ./scripts/feeds update -a
+          ./scripts/feeds update base packages luci
+
           ./scripts/feeds install -a
 
 
@@ -57,175 +59,53 @@ jobs:
           cd source
 
 
-          #
-          # Target
-          #
-
           echo "CONFIG_TARGET_qualcommax=y" > .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx=y" >> .config
-          # echo "CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
 
 
-          #
           # LuCI
-          #
 
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_PACKAGE_luci-base=y" >> .config
-          echo "CONFIG_PACKAGE_luci-ssl=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
 
 
-          #
-          # Firewall4
-          #
-
-          echo "CONFIG_PACKAGE_firewall4=y" >> .config
-          echo "CONFIG_PACKAGE_nftables=y" >> .config
-
-
-          #
-          # DNS
-          #
-
-          echo "CONFIG_PACKAGE_dnsmasq-full=y" >> .config
-
-
-          #
-          # PPPoE
-          #
-
-          echo "CONFIG_PACKAGE_ppp=y" >> .config
-          echo "CONFIG_PACKAGE_ppp-mod-pppoe=y" >> .config
-          
-          # SQM/Cake
-          echo "CONFIG_PACKAGE_tc=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-sched-cake=y" >> .config
-          echo "CONFIG_PACKAGE_luci-app-sqm=y" >> .config
-          echo "CONFIG_PACKAGE_tcpdump=y" >> .config
-          echo "CONFIG_PACKAGE_ip-full=y" >> .config
-          echo "CONFIG_PACKAGE_ethtool=y" >> .config
-          echo "CONFIG_PACKAGE_bind-dig=y" >> .config
-          echo "CONFIG_PACKAGE_tc=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-sched=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-sched-cake=y" >> .config
-
-          
-
-
-          
-
-
-          #
-          # IPv6
-          #
-
-          echo "CONFIG_PACKAGE_ipv6helper=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-nf-conntrack6=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-nft-core=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-nft-fib=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-nft-nat6=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-nft-offload=y" >> .config
-          echo "CONFIG_PACKAGE_odhcp6c=y" >> .config
-          echo "CONFIG_PACKAGE_odhcpd-ipv6only=y" >> .config
-          
-
-
-
-          #
-          # ZRAM
-          #
-
-          echo "CONFIG_PACKAGE_zram-swap=y" >> .config
-
-          # Qualcomm switch
-          echo "CONFIG_PACKAGE_kmod-qca-ssdk=y" >> .config
-
-
-          #
-          # DAED required kernel modules
-          #
+          # DAED 依赖 kmod
 
           echo "CONFIG_PACKAGE_kmod-sched-core=y" >> .config
           echo "CONFIG_PACKAGE_kmod-sched-bpf=y" >> .config
           echo "CONFIG_PACKAGE_kmod-veth=y" >> .config
           echo "CONFIG_PACKAGE_kmod-xdp-sockets-diag=y" >> .config
-          echo "CONFIG_KERNEL_NET_CLS_BPF=y" >> .config
-          echo "CONFIG_KERNEL_NET_ACT_BPF=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-nft-bridge=y"
 
 
-          #
-          # eBPF
-          #
+          # BPF / XDP
 
           echo "CONFIG_KERNEL_BPF=y" >> .config
           echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
-          echo "CONFIG_KERNEL_BPF_JIT=y" >> .config
           echo "CONFIG_KERNEL_BPF_EVENTS=y" >> .config
           echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
-          echo "CONFIG_KERNEL_BPF_LSM=y" >> .config
-          echo "CONFIG_KERNEL_CGROUP_BPF=y" >> .config
-          echo "CONFIG_KERNEL_BPF_STREAM_PARSER=y" >> .config
 
+          # 开启内核与模块的 BTF 支持（关键修复）
+          echo "CONFIG_DEBUG_INFO_BTF=y" >> .config
+          echo "CONFIG_DEBUG_INFO_BTF_MODULES=y" >> .config
+          echo "CONFIG_BPF_JIT=y" >> .config
 
-
-          #
-          # BTF support (解决 dae no BTF found)
-          #
-
-          echo "CONFIG_KERNEL_DEBUG_INFO=y" >> .config
-          echo "CONFIG_KERNEL_DEBUG_INFO_BTF=y" >> .config
-          echo "CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES=y" >> .config
-          echo "CONFIG_KERNEL_DEBUG_INFO_REDUCED=n" >> .config
-          # echo "CONFIG_KERNEL_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=y" >> .config
-          echo "CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=y" >> .config
-
-
-          #
-          # pahole
-          #
-
-          echo "CONFIG_PAHOLE=y" >> .config
-
-          # WireGuard
-          echo "CONFIG_PACKAGE_kmod-wireguard=y" >> .config
-          echo "CONFIG_PACKAGE_wireguard-tools=y" >> .config
-          echo "CONFIG_PACKAGE_luci-proto-wireguard=y" >> .config
-
-
-
-          #
-          # Tools
-          #
+          # 常用工具
 
           echo "CONFIG_PACKAGE_ca-bundle=y" >> .config
-          echo "CONFIG_PACKAGE_ca-certificates=y" >> .config
           echo "CONFIG_PACKAGE_curl=y" >> .config
           echo "CONFIG_PACKAGE_htop=y" >> .config
           echo "CONFIG_PACKAGE_nano=y" >> .config
 
 
-          #
-          # First normalize
-          #
+          # 不使用 zram
+
+          echo "# CONFIG_PACKAGE_zram-swap is not set" >> .config
+
 
           make defconfig
-
-
-          #
-          # Force BTF after defconfig
-          #
-
-          echo "CONFIG_KERNEL_DEBUG_INFO=y" >> .config
-          echo "CONFIG_KERNEL_DEBUG_INFO_BTF=y" >> .config
-          echo "CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES=y" >> .config
-          echo "CONFIG_KERNEL_DEBUG_INFO_REDUCED=n" >> .config
-          echo "CONFIG_KERNEL_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=y" >> .config
-
-
-        
-
 
 
       - name: Download packages
@@ -235,7 +115,6 @@ jobs:
           make download -j8
 
 
-
       - name: Compile firmware
         run: |
           cd source
@@ -243,19 +122,11 @@ jobs:
           make -j$(nproc) V=s
 
 
-
-      - name: Check BTF
-        run: |
-          cd source
-
-          grep CONFIG_KERNEL_DEBUG_INFO_BTF .config || true
-
-
-
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: NN6000-V2-DAED-BTF
+          name: NN6000-V2-kmods
           path: |
             source/bin/targets/qualcommax/ipq60xx/*-sysupgrade.bin
             source/bin/targets/qualcommax/ipq60xx/*-initramfs*
+            source/bin/targets/qualcommax/ipq60xx/packages/*
