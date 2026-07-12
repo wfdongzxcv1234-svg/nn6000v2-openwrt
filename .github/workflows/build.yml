@@ -124,7 +124,7 @@ jobs:
           make -j2
 
       - name: Upload firmware
-        uses: actions/upload-artifact=v4
+        uses: actions/upload-artifact@v4
         with:
           name: NN6000-VUltimate-Firmware
           path: |
