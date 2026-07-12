@@ -81,7 +81,7 @@ jobs:
           #
 
           echo "CONFIG_PACKAGE_firewall4=y" >> .config
-          echo "CONFIG_PACKAGE_nftables=y"
+          echo "CONFIG_PACKAGE_nftables=y" >> .config
 
 
           #
@@ -97,6 +97,23 @@ jobs:
 
           echo "CONFIG_PACKAGE_ppp=y" >> .config
           echo "CONFIG_PACKAGE_ppp-mod-pppoe=y" >> .config
+          
+          # SQM/Cake
+          echo "CONFIG_PACKAGE_tc=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-cake=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-sqm=y" >> .config
+          echo "CONFIG_PACKAGE_tcpdump=y" >> .config
+          echo "CONFIG_PACKAGE_ip-full=y" >> .config
+          echo "CONFIG_PACKAGE_ethtool=y" >> .config
+          echo "CONFIG_PACKAGE_bind-dig=y" >> .config
+          echo "CONFIG_PACKAGE_tc=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-cake=y" >> .config
+
+          
+
+
+          
 
 
           #
@@ -109,6 +126,9 @@ jobs:
           echo "CONFIG_PACKAGE_kmod-nft-fib=y" >> .config
           echo "CONFIG_PACKAGE_kmod-nft-nat6=y" >> .config
           echo "CONFIG_PACKAGE_kmod-nft-offload=y" >> .config
+          echo "CONFIG_PACKAGE_odhcp6c=y" >> .config
+          echo "CONFIG_PACKAGE_odhcpd-ipv6only=y" >> .config
+          
 
 
 
@@ -127,6 +147,8 @@ jobs:
           echo "CONFIG_PACKAGE_kmod-sched-bpf=y" >> .config
           echo "CONFIG_PACKAGE_kmod-veth=y" >> .config
           echo "CONFIG_PACKAGE_kmod-xdp-sockets-diag=y" >> .config
+          echo "CONFIG_KERNEL_NET_CLS_BPF=y" >> .config
+          echo "CONFIG_KERNEL_NET_ACT_BPF=y" >> .config
 
 
           #
@@ -138,6 +160,10 @@ jobs:
           echo "CONFIG_KERNEL_BPF_JIT=y" >> .config
           echo "CONFIG_KERNEL_BPF_EVENTS=y" >> .config
           echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
+          echo "CONFIG_KERNEL_BPF_LSM=y" >> .config
+          echo "CONFIG_KERNEL_CGROUP_BPF=y" >> .config
+          echo "CONFIG_KERNEL_BPF_STREAM_PARSER=y" >> .config
+
 
 
           #
@@ -148,7 +174,8 @@ jobs:
           echo "CONFIG_KERNEL_DEBUG_INFO_BTF=y" >> .config
           echo "CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES=y" >> .config
           echo "CONFIG_KERNEL_DEBUG_INFO_REDUCED=n" >> .config
-          echo "CONFIG_KERNEL_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=y" >> .config
+          # echo "CONFIG_KERNEL_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=y" >> .config
+          echo "CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=y" >> .config
 
 
           #
@@ -156,6 +183,12 @@ jobs:
           #
 
           echo "CONFIG_PAHOLE=y" >> .config
+
+          # WireGuard
+          echo "CONFIG_PACKAGE_kmod-wireguard=y" >> .config
+          echo "CONFIG_PACKAGE_wireguard-tools=y" >> .config
+          echo "CONFIG_PACKAGE_luci-proto-wireguard=y" >> .config
+
 
 
           #
@@ -187,7 +220,7 @@ jobs:
           echo "CONFIG_KERNEL_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=y" >> .config
 
 
-          make defconfig
+        
 
 
 
