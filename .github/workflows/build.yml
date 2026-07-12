@@ -1,131 +1,129 @@
-name: Build ImmortalWrt NN6000 V2 DAED kmods
+name: Build ImmortalWrt NN6000 V2 Ultimate Max
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-
     runs-on: ubuntu-22.04
 
     steps:
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/share/swift
+          sudo apt clean
 
       - name: Clone ImmortalWrt
         run: |
-          git clone --depth=20 \
-          https://github.com/immortalwrt/immortalwrt.git source
-
+          git clone --depth=20 https://github.com/immortalwrt/immortalwrt.git source
 
       - name: Install build dependencies
         run: |
           sudo apt update
-
           sudo apt install -y \
-            build-essential \
-            clang \
-            flex \
-            bison \
-            gawk \
-            gettext \
-            git \
-            libncurses-dev \
-            libssl-dev \
-            python3 \
-            python3-pyelftools \
-            python3-setuptools \
-            rsync \
-            subversion \
-            swig \
-            unzip \
-            wget \
-            zlib1g-dev \
-            file \
-            zstd \
-            pahole \
-            dwarves
-
+            build-essential clang flex bison gawk gettext git libncurses-dev libssl-dev \
+            python3 python3-pyelftools python3-setuptools rsync subversion swig unzip wget \
+            zlib1g-dev file zstd \
+            pahole dwarves
 
       - name: Update feeds
         run: |
           cd source
-
           ./scripts/feeds update base packages luci
-
           ./scripts/feeds install -a
-
 
       - name: Configure NN6000 V2
         run: |
           cd source
+          rm -f .config
 
-
+          # 基础目标设备 (NN6000 V2)
           echo "CONFIG_TARGET_qualcommax=y" > .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx=y" >> .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
 
-
-          # LuCI
-
+          # LuCI 界面与中文语言包
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_PACKAGE_luci-base=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
 
-
-          # DAED 依赖 kmod
-
+          # DAED 依赖 kmod 组件
           echo "CONFIG_PACKAGE_kmod-sched-core=y" >> .config
           echo "CONFIG_PACKAGE_kmod-sched-bpf=y" >> .config
           echo "CONFIG_PACKAGE_kmod-veth=y" >> .config
           echo "CONFIG_PACKAGE_kmod-xdp-sockets-diag=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-nft-bridge=y"
+          echo "CONFIG_PACKAGE_kmod-nft-bridge=y" >> .config
 
-
-          # BPF / XDP
-
+          # BPF / XDP & 内核 BTF 彻底修复
           echo "CONFIG_KERNEL_BPF=y" >> .config
           echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
           echo "CONFIG_KERNEL_BPF_EVENTS=y" >> .config
           echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
-
-          # 开启内核与模块的 BTF 支持（关键修复）
+          echo "CONFIG_BPF_JIT=y" >> .config
           echo "CONFIG_DEBUG_INFO_BTF=y" >> .config
           echo "CONFIG_DEBUG_INFO_BTF_MODULES=y" >> .config
-          echo "CONFIG_BPF_JIT=y" >> .config
+
+          # ========== IPv6 增强配置 ==========
+          echo "CONFIG_PACKAGE_ipv6helper=y" >> .config
+          echo "CONFIG_PACKAGE_dnsmasq-full=y" >> .config
+          echo "CONFIG_PACKAGE_odhcp6c=y" >> .config
+          echo "CONFIG_PACKAGE_odhcpd-ipv6only=y" >> .config
+          echo "CONFIG_PACKAGE_luci-proto-ipv6=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-ipt-nat6=y" >> .config
+
+          # ========== SQM 智能队列限速 ==========
+          echo "CONFIG_PACKAGE_sqm-scripts=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-sqm=y" >> .config
+          echo "CONFIG_PACKAGE_luci-i18n-sqm-zh-cn=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-cake=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-fq-codel=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-ifb=y" >> .config
+
+          # ========== 交换机驱动与硬件转发加速 ==========
+          echo "CONFIG_PACKAGE_kmod-qca-nss-ecm=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-qca-nss-sfe=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-turboacc=y" >> .config
+          echo "CONFIG_PACKAGE_luci-i18n-turboacc-zh-cn=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-bridge=y" >> .config
+          echo "CONFIG_PACKAGE_swconfig=y" >> .config
+
+          # ========== 防火墙4 (Firewall4 - Nftables) 增强配置 ==========
+          echo "CONFIG_PACKAGE_firewall4=y" >> .config
+          echo "CONFIG_PACKAGE_nftables=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-nft-core=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-nft-fib=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-nft-nat=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-nft-tproxy=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-firewall=y" >> .config
 
           # 常用工具
-
           echo "CONFIG_PACKAGE_ca-bundle=y" >> .config
           echo "CONFIG_PACKAGE_curl=y" >> .config
           echo "CONFIG_PACKAGE_htop=y" >> .config
           echo "CONFIG_PACKAGE_nano=y" >> .config
 
-
-          # 不使用 zram
-
+          # 2GB 内存优化：关闭 zram-swap
           echo "# CONFIG_PACKAGE_zram-swap is not set" >> .config
 
-
           make defconfig
-
 
       - name: Download packages
         run: |
           cd source
-
           make download -j8
-
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
 
       - name: Compile firmware
         run: |
           cd source
-
-          make -j$(nproc) V=s
-
+          # 双线程安全编译，稳妥防止 BTF 阶段 OOM 报错中断
+          make -j2
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: NN6000-V2-kmods
+          name: NN6000-VUltimate-Firmware
           path: |
             source/bin/targets/qualcommax/ipq60xx/*-sysupgrade.bin
             source/bin/targets/qualcommax/ipq60xx/*-initramfs*
