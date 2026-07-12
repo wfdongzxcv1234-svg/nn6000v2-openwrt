@@ -1,4 +1,22 @@
-yaml      # ==================== 新增：编译前置依赖 ====================
+name: Build NN6000 V2 Firmware
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clone OpenWrt source
+        run: |
+          git clone https://github.com/openwrt/openwrt.git source
+          cd source
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
       - name: Install BTF build dependencies
         run: |
           sudo apt-get update
@@ -11,12 +29,9 @@ yaml      # ==================== 新增：编译前置依赖 ===================
           rm -f .config
 
           # ==================== 内核 BTF 开关（唯一真正有效的写法）====================
-          # 只需要写进目标内核配置片段，不需要在顶层 .config 里重复加 KERNEL_ 前缀开关，
-          # 也不存在 CONFIG_HAS_BPF_TOOLCHAIN 这个 Kconfig 符号，写了没有任何效果。
           echo "CONFIG_DEBUG_INFO=y" >> target/linux/qualcommax/config-6.12
           echo "CONFIG_DEBUG_INFO_BTF=y" >> target/linux/qualcommax/config-6.12
           echo "CONFIG_DEBUG_INFO_BTF_MODULES=y" >> target/linux/qualcommax/config-6.12
-          # 确认不会被精简调试信息覆盖（精简版调试信息 pahole 无法生成 BTF）
           echo "# CONFIG_DEBUG_INFO_REDUCED is not set" >> target/linux/qualcommax/config-6.12
 
           # 2. 基础目标设备 (NN6000 V2)
@@ -24,12 +39,11 @@ yaml      # ==================== 新增：编译前置依赖 ===================
           echo "CONFIG_TARGET_qualcommax_ipq60xx=y" >> .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
 
-          # 3. BPF / XDP 基础能力（保留，这些是真实符号）
+          # 3. BPF / XDP 基础能力
           echo "CONFIG_KERNEL_BPF=y" >> .config
           echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
           echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
           echo "CONFIG_BPF_JIT=y" >> .config
-          # ============================================================================
 
           # LuCI 界面与中文语言包
           echo "CONFIG_PACKAGE_luci=y" >> .config
@@ -87,7 +101,11 @@ yaml      # ==================== 新增：编译前置依赖 ===================
 
           make defconfig
 
-      # ==================== 新增：编译后自检 BTF 是否真的生成 ====================
+      - name: Build firmware
+        run: |
+          cd source
+          make -j$(nproc) V=s || make -j1 V=s
+
       - name: Verify BTF was generated
         run: |
           cd source
@@ -103,3 +121,9 @@ yaml      # ==================== 新增：编译前置依赖 ===================
             echo "::error::vmlinux 中没有 .BTF section！请检查上一步编译日志中是否有 'pahole ... is not available' 或 'Skipping BTF generation' 字样"
             exit 1
           fi
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nn6000-v2-firmware
+          path: source/bin/targets/**/*
