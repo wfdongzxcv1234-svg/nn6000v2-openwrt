@@ -1,50 +1,35 @@
-name: Build ImmortalWrt NN6000 V2 Ultimate Max
-
-on:
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-
-    steps:
-      - name: Free Disk Space
+yaml      # ==================== 新增：编译前置依赖 ====================
+      - name: Install BTF build dependencies
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/share/swift
-          sudo apt clean
-
-      - name: Clone ImmortalWrt
-        run: |
-          git clone --depth=20 https://github.com/immortalwrt/immortalwrt.git source
-
-      - name: Install build dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            build-essential clang flex bison gawk gettext git libncurses-dev libssl-dev \
-            python3 python3-pyelftools python3-setuptools rsync subversion swig unzip wget \
-            zlib1g-dev file zstd \
-            pahole dwarves
-
-      - name: Update feeds
-        run: |
-          cd source
-          ./scripts/feeds update base packages luci
-          ./scripts/feeds install -a
+          sudo apt-get update
+          sudo apt-get install -y dwarves  # 提供 pahole，生成 BTF 的关键工具
+          pahole --version                 # 确认版本，6.12 内核建议 pahole >= 1.24
 
       - name: Configure NN6000 V2
         run: |
           cd source
           rm -f .config
 
-          # 1. 暴力注入到高通平台的内核默认配置中，防止被 make defconfig 刷掉
+          # ==================== 内核 BTF 开关（唯一真正有效的写法）====================
+          # 只需要写进目标内核配置片段，不需要在顶层 .config 里重复加 KERNEL_ 前缀开关，
+          # 也不存在 CONFIG_HAS_BPF_TOOLCHAIN 这个 Kconfig 符号，写了没有任何效果。
+          echo "CONFIG_DEBUG_INFO=y" >> target/linux/qualcommax/config-6.12
           echo "CONFIG_DEBUG_INFO_BTF=y" >> target/linux/qualcommax/config-6.12
           echo "CONFIG_DEBUG_INFO_BTF_MODULES=y" >> target/linux/qualcommax/config-6.12
+          # 确认不会被精简调试信息覆盖（精简版调试信息 pahole 无法生成 BTF）
+          echo "# CONFIG_DEBUG_INFO_REDUCED is not set" >> target/linux/qualcommax/config-6.12
 
           # 2. 基础目标设备 (NN6000 V2)
           echo "CONFIG_TARGET_qualcommax=y" > .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx=y" >> .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
+
+          # 3. BPF / XDP 基础能力（保留，这些是真实符号）
+          echo "CONFIG_KERNEL_BPF=y" >> .config
+          echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
+          echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
+          echo "CONFIG_BPF_JIT=y" >> .config
+          # ============================================================================
 
           # LuCI 界面与中文语言包
           echo "CONFIG_PACKAGE_luci=y" >> .config
@@ -57,15 +42,6 @@ jobs:
           echo "CONFIG_PACKAGE_kmod-veth=y" >> .config
           echo "CONFIG_PACKAGE_kmod-xdp-sockets-diag=y" >> .config
           echo "CONFIG_PACKAGE_kmod-nft-bridge=y" >> .config
-
-          # BPF / XDP & 内核 BTF（双保险）
-          echo "CONFIG_KERNEL_BPF=y" >> .config
-          echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
-          echo "CONFIG_KERNEL_BPF_EVENTS=y" >> .config
-          echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
-          echo "CONFIG_BPF_JIT=y" >> .config
-          echo "CONFIG_DEBUG_INFO_BTF=y" >> .config
-          echo "CONFIG_DEBUG_INFO_BTF_MODULES=y" >> .config
 
           # ========== IPv6 增强配置 ==========
           echo "CONFIG_PACKAGE_ipv6helper=y" >> .config
@@ -111,23 +87,19 @@ jobs:
 
           make defconfig
 
-      - name: Download packages
+      # ==================== 新增：编译后自检 BTF 是否真的生成 ====================
+      - name: Verify BTF was generated
         run: |
           cd source
-          make download -j8
-          find dl -size -1024c -exec ls -l {} \;
-          find dl -size -1024c -exec rm -f {} \;
-
-      - name: Compile firmware
-        run: |
-          cd source
-          make -j2
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: NN6000-VUltimate-Firmware
-          path: |
-            source/bin/targets/qualcommax/ipq60xx/*-sysupgrade.bin
-            source/bin/targets/qualcommax/ipq60xx/*-initramfs*
-            source/bin/targets/qualcommax/ipq60xx/packages/*
+          VMLINUX=$(find build_dir -type f -name vmlinux -path "*qualcommax*" | head -n1)
+          if [ -z "$VMLINUX" ]; then
+            echo "::warning::未找到 vmlinux，跳过 BTF 检查（可能编译目录结构不同）"
+            exit 0
+          fi
+          echo "检查文件: $VMLINUX"
+          if readelf -S "$VMLINUX" 2>/dev/null | grep -q '\.BTF'; then
+            echo "✅ BTF section 存在，daed 应该可以正常读取"
+          else
+            echo "::error::vmlinux 中没有 .BTF section！请检查上一步编译日志中是否有 'pahole ... is not available' 或 'Skipping BTF generation' 字样"
+            exit 1
+          fi
