@@ -75,15 +75,25 @@ jobs:
           echo "CONFIG_PACKAGE_kmod-sched-bpf=y" >> .config
           echo "CONFIG_PACKAGE_kmod-veth=y" >> .config
           echo "CONFIG_PACKAGE_kmod-xdp-sockets-diag=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-nft-bridge=y"
+          echo "CONFIG_PACKAGE_kmod-nft-bridge=y" >> .config
 
 
           # BPF / XDP
 
-          echo "CONFIG_KERNEL_BPF=y" >> .config
-          echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
-          echo "CONFIG_KERNEL_BPF_EVENTS=y" >> .config
-          echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
+         echo "CONFIG_KERNEL_BPF=y" >> .config
+         echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
+         echo "CONFIG_KERNEL_BPF_EVENTS=y" >> .config
+         echo "CONFIG_KERNEL_BPF_JIT=y" >> .config
+         echo "CONFIG_KERNEL_HAVE_EBPF_JIT=y" >> .config
+
+         # BTF (DAED必须)
+
+         echo "CONFIG_KERNEL_DEBUG_INFO=y" >> .config
+         echo "CONFIG_KERNEL_DEBUG_INFO_BTF=y" >> .config
+         echo "CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES=y" >> .config
+
+        echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
+          
 
 
           # 常用工具
