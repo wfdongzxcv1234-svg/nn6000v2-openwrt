@@ -51,21 +51,25 @@ jobs:
           cd source
           rm -f .config
 
-          echo "CONFIG_DEBUG_INFO=y" >> target/linux/qualcommax/config-6.12
-          echo "CONFIG_DEBUG_INFO_BTF=y" >> target/linux/qualcommax/config-6.12
-          echo "CONFIG_DEBUG_INFO_BTF_MODULES=y" >> target/linux/qualcommax/config-6.12
-          echo "# CONFIG_DEBUG_INFO_REDUCED is not set" >> target/linux/qualcommax/config-6.12
+          # --- 核心修改：强制全局开启 OpenWrt 自身的内核 BTF 编译开关 ---
+          echo "CONFIG_DEVEL=y" > .config
+          echo "CONFIG_KERNEL_DEBUG_INFO=y" >> .config
+          echo "CONFIG_KERNEL_DEBUG_INFO_BTF=y" >> .config
+          echo "CONFIG_KERNEL_BPF_EVENTS=y" >> .config
 
-          echo "CONFIG_TARGET_qualcommax=y" > .config
+          # --- 基础架构配置 ---
+          echo "CONFIG_TARGET_qualcommax=y" >> .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx=y" >> .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
 
+          # --- 内核功能增强 ---
           echo "CONFIG_KERNEL_BPF=y" >> .config
           echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
           echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
           echo "CONFIG_BPF_JIT=y" >> .config
           echo "CONFIG_CCACHE=y" >> .config
 
+          # --- 基础组件与网络 ---
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_PACKAGE_luci-base=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
@@ -83,6 +87,7 @@ jobs:
           echo "CONFIG_PACKAGE_luci-proto-ipv6=y" >> .config
           echo "CONFIG_PACKAGE_kmod-ipt-nat6=y" >> .config
 
+          # --- SQM 流量控制 ---
           echo "CONFIG_PACKAGE_sqm-scripts=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-sqm=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-sqm-zh-cn=y" >> .config
@@ -90,6 +95,7 @@ jobs:
           echo "CONFIG_PACKAGE_kmod-sched-fq-codel=y" >> .config
           echo "CONFIG_PACKAGE_kmod-ifb=y" >> .config
 
+          # --- 网络加速 (注意：如 daed 运行异常，请在 LuCI 界面关闭 NSS 流量分流) ---
           echo "CONFIG_PACKAGE_kmod-qca-nss-ecm=y" >> .config
           echo "CONFIG_PACKAGE_kmod-qca-nss-sfe=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-turboacc=y" >> .config
@@ -97,6 +103,7 @@ jobs:
           echo "CONFIG_PACKAGE_kmod-bridge=y" >> .config
           echo "CONFIG_PACKAGE_swconfig=y" >> .config
 
+          # --- 防火墙 ---
           echo "CONFIG_PACKAGE_firewall4=y" >> .config
           echo "CONFIG_PACKAGE_nftables=y" >> .config
           echo "CONFIG_PACKAGE_kmod-nft-core=y" >> .config
@@ -105,14 +112,26 @@ jobs:
           echo "CONFIG_PACKAGE_kmod-nft-tproxy=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-firewall=y" >> .config
 
+          # --- 常用工具 ---
           echo "CONFIG_PACKAGE_ca-bundle=y" >> .config
           echo "CONFIG_PACKAGE_curl=y" >> .config
           echo "CONFIG_PACKAGE_htop=y" >> .config
           echo "CONFIG_PACKAGE_nano=y" >> .config
-
           echo "# CONFIG_PACKAGE_zram-swap is not set" >> .config
 
+          # 让 OpenWrt 自动补全并校验 .config
           make defconfig
+
+          # --- 核心修改：在 defconfig 之后，强制重写并清洗 target 目录下的所有内核配置，干掉冲突选项 ---
+          find target/linux/qualcommax/ -name "config-*" | xargs -I {} sh -c '
+            sed -i "/CONFIG_DEBUG_INFO/d" {}
+            sed -i "/CONFIG_BPF_SYSCALL/d" {}
+            sed -i "/CONFIG_DEBUG_INFO_REDUCED/d" {}
+            echo "CONFIG_DEBUG_INFO=y" >> {}
+            echo "CONFIG_DEBUG_INFO_BTF=y" >> {}
+            echo "CONFIG_DEBUG_INFO_BTF_MODULES=y" >> {}
+            echo "CONFIG_BPF_SYSCALL=y" >> {}
+          '
 
       - name: Cache toolchain
         uses: actions/cache@v4
@@ -121,7 +140,7 @@ jobs:
             source/staging_dir/host*
             source/staging_dir/toolchain-*
             source/build_dir/toolchain-*
-          key: toolchain-nn6000v2-${{ hashFiles('source/target/linux/qualcommax/config-6.12') }}
+          key: toolchain-nn6000v2-${{ hashFiles('source/target/linux/qualcommax/config-*') }}
           restore-keys: |
             toolchain-nn6000v2-
 
@@ -131,28 +150,36 @@ jobs:
           path: ~/.ccache
           key: ccache-nn6000v2-${{ github.run_id }}
           restore-keys: |
-            ccache-nn6000v2-
+            cache-nn6000v2-
 
       - name: Build firmware
         run: |
           cd source
           export CCACHE_DIR=~/.ccache
-          make -j$(nproc) 2>&1 | tee build.log
+          # 首次编译 BTF 内核建议先单线程或正常多线程，如果报错可以更容易定位
+          make -j$(nproc) || make -j1 V=s 2>&1 | tee build.log
 
       - name: Debug - check actual kernel .config used
         run: |
           cd source
           KCONFIG=$(find build_dir -name .config -path "*linux-qualcommax_ipq60xx*" | head -n1)
-          echo "内核 config 路径: $KCONFIG"
-          grep -i "debug_info\|btf" "$KCONFIG" || echo "没找到任何 BTF/DEBUG_INFO 相关行"
+          if [ -n "$KCONFIG" ]; then
+            echo "内核 config 路径: $KCONFIG"
+            grep -i "debug_info\|btf" "$KCONFIG" || echo "没找到任何 BTF/DEBUG_INFO 相关行"
+          else
+            echo "未找到编译生成的内核 .config 路径"
+          fi
 
       - name: Debug - grep BTF related lines from build log
+        if: always()
         run: |
           cd source
-          echo "===== pahole 相关 ====="
-          grep -i "pahole" build.log || echo "没有 pahole 相关日志"
-          echo "===== BTF 相关 ====="
-          grep -i "btf" build.log | head -80 || echo "没有 BTF 相关日志"
+          if [ -f build.log ]; then
+            echo "===== pahole 相关 ====="
+            grep -i "pahole" build.log || echo "没有 pahole 相关日志"
+            echo "===== BTF 相关 ====="
+            grep -i "btf" build.log | head -80 || echo "没有 BTF 相关日志"
+          fi
 
       - name: Verify BTF was generated
         run: |
