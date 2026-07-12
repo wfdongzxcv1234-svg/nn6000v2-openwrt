@@ -139,6 +139,9 @@ jobs:
 
           echo "CONFIG_PACKAGE_zram-swap=y" >> .config
 
+          # Qualcomm switch
+          echo "CONFIG_PACKAGE_kmod-qca-ssdk=y" >> .config
+
 
           #
           # DAED required kernel modules
