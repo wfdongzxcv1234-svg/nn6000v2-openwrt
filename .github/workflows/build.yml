@@ -47,8 +47,7 @@ jobs:
         run: |
           cd source
 
-          ./scripts/feeds update base packages luci
-
+          ./scripts/feeds update -a
           ./scripts/feeds install -a
 
 
@@ -56,58 +55,101 @@ jobs:
         run: |
           cd source
 
+          cat > .config <<'EOF'
 
-          echo "CONFIG_TARGET_qualcommax=y" > .config
-          echo "CONFIG_TARGET_qualcommax_ipq60xx=y" >> .config
-          echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
-
-
-          # LuCI
-
-          echo "CONFIG_PACKAGE_luci=y" >> .config
-          echo "CONFIG_PACKAGE_luci-base=y" >> .config
-          echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
+CONFIG_TARGET_qualcommax=y
+CONFIG_TARGET_qualcommax_ipq60xx=y
+CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y
 
 
-          # DAED 依赖 kmod
+# LuCI
 
-          echo "CONFIG_PACKAGE_kmod-sched-core=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-sched-bpf=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-veth=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-xdp-sockets-diag=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-nft-bridge=y" >> .config
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-base=y
+CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
 
 
-          # BPF / XDP
-          echo "CONFIG_KERNEL_BPF=y" >> .config
-          echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
-          echo "CONFIG_KERNEL_BPF_EVENTS=y" >> .config
-          echo "CONFIG_KERNEL_BPF_JIT=y" >> .config
-          echo "CONFIG_KERNEL_HAVE_EBPF_JIT=y" >> .config
-          
-         # BTF (DAED必须)
+# Firewall
 
-         echo "CONFIG_KERNEL_DEBUG_INFO=y" >> .config
-         echo "CONFIG_KERNEL_DEBUG_INFO_BTF=y" >> .config
-         echo "CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES=y" >> .config
-         echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
-          
+CONFIG_PACKAGE_firewall4=y
+CONFIG_PACKAGE_nftables=y
 
 
-          # 常用工具
+# DNS
 
-          echo "CONFIG_PACKAGE_ca-bundle=y" >> .config
-          echo "CONFIG_PACKAGE_curl=y" >> .config
-          echo "CONFIG_PACKAGE_htop=y" >> .config
-          echo "CONFIG_PACKAGE_nano=y" >> .config
+CONFIG_PACKAGE_dnsmasq-full=y
 
 
-          # 不使用 zram
+# PPPoE
 
-          echo "# CONFIG_PACKAGE_zram-swap is not set" >> .config
+CONFIG_PACKAGE_ppp=y
+CONFIG_PACKAGE_ppp-mod-pppoe=y
+
+
+# IPv6
+
+CONFIG_PACKAGE_ipv6helper=y
+
+
+# DAED required kmods
+
+CONFIG_PACKAGE_kmod-sched-core=y
+CONFIG_PACKAGE_kmod-sched-bpf=y
+CONFIG_PACKAGE_kmod-veth=y
+CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
+CONFIG_PACKAGE_kmod-nft-bridge=y
+
+
+# BPF
+
+CONFIG_KERNEL_BPF=y
+CONFIG_KERNEL_BPF_SYSCALL=y
+CONFIG_KERNEL_BPF_EVENTS=y
+CONFIG_KERNEL_BPF_JIT=y
+CONFIG_KERNEL_HAVE_EBPF_JIT=y
+
+
+# BTF (DAED eBPF required)
+
+CONFIG_KERNEL_DEBUG_INFO=y
+CONFIG_KERNEL_DEBUG_INFO_BTF=y
+CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES=y
+
+
+# XDP
+
+CONFIG_KERNEL_XDP_SOCKETS=y
+
+
+# Tools
+
+CONFIG_PACKAGE_ca-bundle=y
+CONFIG_PACKAGE_curl=y
+CONFIG_PACKAGE_htop=y
+CONFIG_PACKAGE_nano=y
+CONFIG_PACKAGE_wget-ssl=y
+
+
+# HTTPS
+
+CONFIG_PACKAGE_ca-certificates=y
+
+
+# Disable ZRAM
+
+# CONFIG_PACKAGE_zram-swap is not set
+
+EOF
 
 
           make defconfig
+
+
+      - name: Check kernel config
+        run: |
+          cd source
+
+          grep -E "BTF|BPF" .config || true
 
 
       - name: Download packages
@@ -127,7 +169,7 @@ jobs:
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: NN6000-V2-kmods
+          name: NN6000-V2-DAED-kmods
           path: |
             source/bin/targets/qualcommax/ipq60xx/*-sysupgrade.bin
             source/bin/targets/qualcommax/ipq60xx/*-initramfs*
