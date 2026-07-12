@@ -1,23 +1,30 @@
-name: Build ImmortalWrt NN6000 V2 DAED kmods
+name: Build ImmortalWrt NN6000 V2 DAED
 
 on:
   workflow_dispatch:
 
+
 jobs:
+
   build:
 
     runs-on: ubuntu-22.04
 
+
     steps:
 
-      - name: Clone ImmortalWrt
+
+      - name: Clone ImmortalWrt 25.12
         run: |
-          git clone --depth=20 \
+          git clone --depth=1 \
+          -b openwrt-25.12 \
           https://github.com/immortalwrt/immortalwrt.git source
 
 
-      - name: Install build dependencies
+
+      - name: Install dependencies
         run: |
+
           sudo apt update
 
           sudo apt install -y \
@@ -43,98 +50,220 @@ jobs:
             zstd
 
 
+
       - name: Update feeds
         run: |
+
           cd source
 
-          ./scripts/feeds update base packages luci
+          ./scripts/feeds update -a
 
           ./scripts/feeds install -a
 
 
+
       - name: Configure NN6000 V2
+
         run: |
+
           cd source
-            
 
 
           echo "CONFIG_TARGET_qualcommax=y" > .config
+
           echo "CONFIG_TARGET_qualcommax_ipq60xx=y" >> .config
+
           echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
 
 
+
+          #
           # LuCI
+          #
 
           echo "CONFIG_PACKAGE_luci=y" >> .config
+
           echo "CONFIG_PACKAGE_luci-base=y" >> .config
+
+          echo "CONFIG_PACKAGE_luci-ssl=y" >> .config
+
           echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
 
 
-          # DAED 依赖 kmod
+
+          #
+          # Firewall4
+          #
+
+          echo "CONFIG_PACKAGE_firewall4=y" >> .config
+
+          echo "CONFIG_PACKAGE_nftables=y" >> .config
+
+
+          echo "CONFIG_PACKAGE_kmod-nft-core=y" >> .config
+
+          echo "CONFIG_PACKAGE_kmod-nft-nat=y" >> .config
+
+          echo "CONFIG_PACKAGE_kmod-nft-offload=y"
+
+          echo "CONFIG_PACKAGE_kmod-nft-tproxy=y" >> .config
+
+          echo "CONFIG_PACKAGE_kmod-nft-socket=y" >> .config
+
+
+
+          #
+          # DNS
+          #
+
+          echo "CONFIG_PACKAGE_dnsmasq-full=y" >> .config
+
+
+
+          #
+          # PPPoE
+          #
+
+          echo "CONFIG_PACKAGE_ppp=y" >> .config
+
+          echo "CONFIG_PACKAGE_ppp-mod-pppoe=y" >> .config
+
+
+
+          #
+          # IPv6
+          #
+
+          echo "CONFIG_PACKAGE_ipv6helper=y" >> .config
+
+          echo "CONFIG_PACKAGE_kmod-ipv6=y" >> .config
+
+
+
+          #
+          # WireGuard + TUN
+          #
+
+          echo "CONFIG_PACKAGE_kmod-wireguard=y" >> .config
+
+          echo "CONFIG_PACKAGE_wireguard-tools=y" >> .config
+
+          echo "CONFIG_PACKAGE_kmod-tun=y" >> .config
+
+
+
+          #
+          # DAED eBPF
+          #
 
           echo "CONFIG_PACKAGE_kmod-sched-core=y" >> .config
+
           echo "CONFIG_PACKAGE_kmod-sched-bpf=y" >> .config
+
           echo "CONFIG_PACKAGE_kmod-veth=y" >> .config
+
           echo "CONFIG_PACKAGE_kmod-xdp-sockets-diag=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-nft-bridge=y" >> .config
 
 
-          # BPF / XDP
+
+          #
+          # BPF
+          #
 
           echo "CONFIG_KERNEL_BPF=y" >> .config
+
           echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
+
           echo "CONFIG_KERNEL_BPF_EVENTS=y" >> .config
+
           echo "CONFIG_KERNEL_BPF_JIT=y" >> .config
-          echo "CONFIG_KERNEL_HAVE_EBPF_JIT=y" >> .config
-          echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
+
+          echo "CONFIG_KERNEL_BPF_JIT_ALWAYS_ON=y" >> .config
 
 
-          # BTF support for DAED eBPF
+
+          #
+          # BTF (关键)
+          #
 
           echo "CONFIG_KERNEL_DEBUG_INFO=y" >> .config
+
           echo "CONFIG_KERNEL_DEBUG_INFO_BTF=y" >> .config
+
           echo "CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES=y" >> .config
 
+          echo "CONFIG_KERNEL_DEBUG_INFO_REDUCED=n" >> .config
 
 
-          
 
+          #
+          # 网络工具
+          #
 
-          # 常用工具
+          echo "CONFIG_PACKAGE_ip-full=y" >> .config
+
+          echo "CONFIG_PACKAGE_curl=y" >> .config
+
+          echo "CONFIG_PACKAGE_wget-ssl=y" >> .config
 
           echo "CONFIG_PACKAGE_ca-bundle=y" >> .config
-          echo "CONFIG_PACKAGE_curl=y" >> .config
+
+          echo "CONFIG_PACKAGE_ca-certificates=y" >> .config
+
+
+
+          #
+          # 工具
+          #
+
           echo "CONFIG_PACKAGE_htop=y" >> .config
+
           echo "CONFIG_PACKAGE_nano=y" >> .config
 
 
-          # 不使用 zram
 
-          echo "# CONFIG_PACKAGE_zram-swap is not set" >> .config
+          #
+          # ZRAM
+          #
+
+          echo "CONFIG_PACKAGE_zram-swap=y" >> .config
+
 
 
           make defconfig
 
 
-      - name: Download packages
+
+      - name: Download
+
         run: |
+
           cd source
 
           make download -j8
 
 
-      - name: Compile firmware
+
+      - name: Compile
+
         run: |
+
           cd source
 
           make -j$(nproc) V=s
 
 
+
       - name: Upload firmware
+
         uses: actions/upload-artifact@v4
+
         with:
-          name: NN6000-V2-kmods
+
+          name: NN6000-V2-DAED-BTF
+
           path: |
+
             source/bin/targets/qualcommax/ipq60xx/*-sysupgrade.bin
+
             source/bin/targets/qualcommax/ipq60xx/*-initramfs*
-            source/bin/targets/qualcommax/ipq60xx/packages/*
