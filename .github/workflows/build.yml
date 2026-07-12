@@ -55,10 +55,10 @@ jobs:
       - name: Configure NN6000 V2
         run: |
           cd source
-          make defconfig        
+            
 
 
-          #echo "CONFIG_TARGET_qualcommax=y" > .config
+          echo "CONFIG_TARGET_qualcommax=y" > .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx=y" >> .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
 
