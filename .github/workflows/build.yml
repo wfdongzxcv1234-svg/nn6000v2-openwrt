@@ -79,13 +79,12 @@ jobs:
 
 
           # BPF / XDP
-
-         echo "CONFIG_KERNEL_BPF=y" >> .config
-         echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
-         echo "CONFIG_KERNEL_BPF_EVENTS=y" >> .config
-         echo "CONFIG_KERNEL_BPF_JIT=y" >> .config
-         echo "CONFIG_KERNEL_HAVE_EBPF_JIT=y" >> .config
-
+          echo "CONFIG_KERNEL_BPF=y" >> .config
+          echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
+          echo "CONFIG_KERNEL_BPF_EVENTS=y" >> .config
+          echo "CONFIG_KERNEL_BPF_JIT=y" >> .config
+          echo "CONFIG_KERNEL_HAVE_EBPF_JIT=y" >> .config
+          
          # BTF (DAED必须)
 
          echo "CONFIG_KERNEL_DEBUG_INFO=y" >> .config
