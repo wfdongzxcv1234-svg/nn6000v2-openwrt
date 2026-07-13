@@ -48,7 +48,7 @@ jobs:
       run: |
         cd source
 
-        # 1. 清空旧配置，生成设备基础配置
+        # 1. 生成基础设备配置
         rm -f .config
         make defconfig
 
@@ -91,7 +91,7 @@ jobs:
         CONFIG_KERNEL_CGROUP_BPF=y
         CONFIG_KERNEL_DEBUG_INFO=y
         CONFIG_KERNEL_DEBUG_INFO_BTF=y
-        # CONFIG_KERNEL_DEBUG_INFO_REDUCED is not set   # 显式取消
+        # CONFIG_KERNEL_DEBUG_INFO_REDUCED is not set
 
         # ---- XDP_SOCKETS（kmod-xdp-sockets-diag 依赖） ----
         CONFIG_KERNEL_XDP_SOCKETS=y
@@ -102,8 +102,8 @@ jobs:
         CONFIG_PACKAGE_ca-certificates=y
         EOF
 
-        # 3. 用 olddefconfig 自动处理依赖和新选项
-        make olddefconfig
+        # 3. 使用 oldconfig 并自动接受默认值，解决依赖
+        yes "" | make oldconfig
 
     - name: Download and compile
       run: |
