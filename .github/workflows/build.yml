@@ -1,143 +1,255 @@
-name: Publish daed package feed
+name: Build ImmortalWrt 25.12 NN6000 V2 DAED Kernel
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
 
 jobs:
-  build-and-publish:
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  build:
 
-      - name: Free disk space
+    runs-on: ubuntu-22.04
+
+
+    steps:
+
+
+      - name: Clone ImmortalWrt 25.12
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          sudo docker image prune --all --force
+          git clone \
+          --branch openwrt-25.12 \
+          --depth=1 \
+          https://github.com/immortalwrt/immortalwrt.git source
+
+
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-            bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib \
-            g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev \
-            libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev \
-            libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz \
-            mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 \
-            python3-pip python3-ply python3-docutils python3-pyelftools qemu-utils \
-            rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip \
-            vim wget xmlto xxd zlib1g-dev
-          sudo apt-get install -y dwarves
-          pahole --version
 
-      - name: Clone ImmortalWrt snapshot source
+          sudo apt update
+
+          sudo apt install -y \
+            build-essential \
+            clang \
+            flex \
+            bison \
+            gawk \
+            gettext \
+            git \
+            libncurses-dev \
+            libssl-dev \
+            python3 \
+            python3-pyelftools \
+            python3-setuptools \
+            rsync \
+            subversion \
+            swig \
+            unzip \
+            wget \
+            zlib1g-dev \
+            file \
+            zstd \
+            dwarves \
+            pahole
+
+
+
+      - name: Update feeds
         run: |
-          git clone https://github.com/immortalwrt/immortalwrt.git source
+
           cd source
+
           ./scripts/feeds update -a
+
           ./scripts/feeds install -a
 
-      - name: Add daed package source
-        run: |
-          cd source
-          git clone https://github.com/QiuSimons/luci-app-daed package/dae
 
-      - name: Cache downloaded sources
-        uses: actions/cache@v4
-        with:
-          path: source/dl
-          key: dl-${{ hashFiles('source/feeds.conf.default') }}
-          restore-keys: |
-            dl-
 
-      # 关键：这里的 .config 必须跟你编译基础固件时用的目标+内核配置完全一致，
-      # 否则编出来的 daed 包跟你路由器上的内核/库版本对不上，装不上去。
-      - name: Configure (must match base firmware config)
+      - name: Configure NN6000 V2
         run: |
+
           cd source
+
+
           rm -f .config
 
-          echo "CONFIG_TARGET_qualcommax=y" > .config
+
+          #
+          # Target NN6000 V2
+          #
+
+          echo "CONFIG_TARGET_qualcommax=y" >> .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx=y" >> .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
 
-          echo "CONFIG_DEVEL=y" >> .config
-          echo "CONFIG_KERNEL_DEBUG_INFO=y" >> .config
-          echo "CONFIG_KERNEL_DEBUG_INFO_REDUCED=n" >> .config
-          echo "CONFIG_KERNEL_DEBUG_INFO_BTF=y" >> .config
-          echo "CONFIG_KERNEL_CGROUPS=y" >> .config
-          echo "CONFIG_KERNEL_CGROUP_BPF=y" >> .config
-          echo "CONFIG_KERNEL_BPF_EVENTS=y" >> .config
-          echo "CONFIG_BPF_TOOLCHAIN_HOST=y" >> .config
-          echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-xdp-sockets-diag=y" >> .config
 
-          echo "CONFIG_PACKAGE_luci-app-daed=y" >> .config
-          echo "CONFIG_CCACHE=y" >> .config
+
+          #
+          # LuCI
+          #
+
+          echo "CONFIG_PACKAGE_luci=y" >> .config
+          echo "CONFIG_PACKAGE_luci-base=y" >> .config
+          echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
+
+
+
+          #
+          # Firewall4 nftables
+          #
+
+          echo "CONFIG_PACKAGE_firewall4=y" >> .config
+          echo "CONFIG_PACKAGE_nftables=y"
+
+
+
+          #
+          # DNS
+          #
+
+          echo "CONFIG_PACKAGE_dnsmasq-full=y" >> .config
+
+
+
+          #
+          # PPPoE
+          #
+
+          echo "CONFIG_PACKAGE_ppp=y" >> .config
+          echo "CONFIG_PACKAGE_ppp-mod-pppoe=y" >> .config
+
+
+
+          #
+          # IPv6 完整支持
+          #
+
+          echo "CONFIG_PACKAGE_ipv6helper=y" >> .config
+          echo "CONFIG_PACKAGE_odhcp6c=y" >> .config
+          echo "CONFIG_PACKAGE_odhcpd-ipv6only=y" >> .config
+
+          echo "CONFIG_PACKAGE_kmod-nf-conntrack6=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-nft-core=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-nft-fib=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-nft-nat6=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-nft-offload=y" >> .config
+
+
+
+          #
+          # WireGuard
+          #
+
+          echo "CONFIG_PACKAGE_kmod-wireguard=y" >> .config
+          echo "CONFIG_PACKAGE_wireguard-tools=y" >> .config
+          echo "CONFIG_PACKAGE_luci-proto-wireguard=y" >> .config
+
+
+
+          #
+          # DAED eBPF requirements
+          #
+
+          echo "CONFIG_PACKAGE_kmod-sched-core=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-bpf=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-xdp-sockets-diag=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-veth=y" >> .config
+
+
+
+          #
+          # eBPF
+          #
+
+          echo "CONFIG_KERNEL_BPF=y" >> .config
+          echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
+          echo "CONFIG_KERNEL_BPF_JIT=y" >> .config
+          echo "CONFIG_KERNEL_CGROUP_BPF=y" >> .config
+          echo "CONFIG_KERNEL_NET_CLS_BPF=y" >> .config
+          echo "CONFIG_KERNEL_NET_ACT_BPF=y" >> .config
+
+
+
+          #
+          # BTF
+          #
+
+          echo "CONFIG_KERNEL_DEBUG_INFO=y" >> .config
+          echo "CONFIG_KERNEL_DEBUG_INFO_BTF=y" >> .config
+          echo "CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES=y" >> .config
+          echo "CONFIG_KERNEL_DEBUG_INFO_REDUCED=n" >> .config
+
+
+
+          #
+          # 常用工具
+          #
+
+          echo "CONFIG_PACKAGE_ca-bundle=y" >> .config
+          echo "CONFIG_PACKAGE_ca-certificates=y" >> .config
+          echo "CONFIG_PACKAGE_curl=y" >> .config
+          echo "CONFIG_PACKAGE_htop=y" >> .config
+          echo "CONFIG_PACKAGE_nano=y" >> .config
+          echo "CONFIG_PACKAGE_tcpdump=y" >> .config
+          echo "CONFIG_PACKAGE_ip-full=y" >> .config
+
+
+
+          #
+          # ZRAM
+          #
+
+          echo "CONFIG_PACKAGE_zram-swap=y" >> .config
+
+
+
+          #
+          # 生成完整配置
+          #
 
           make defconfig
 
-      - name: Restore toolchain cache
-        uses: actions/cache@v4
+
+
+      - name: Download sources
+        run: |
+
+          cd source
+
+          make download -j8
+
+
+
+      - name: Compile firmware
+        run: |
+
+          cd source
+
+          make -j$(nproc) V=s
+
+
+
+      - name: Check DAED modules
+        run: |
+
+          cd source
+
+          echo "===== XDP ====="
+
+          grep XDP .config || true
+
+          echo "===== BPF ====="
+
+          grep BPF .config || true
+
+
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
         with:
+
+          name: NN6000-V2-ImmortalWrt-25.12-DAED
+
           path: |
-            source/staging_dir/host*
-            source/staging_dir/toolchain-*
-            source/build_dir/toolchain-*
-          key: toolchain-nn6000v2-daed-${{ hashFiles('source/.config') }}
-          restore-keys: |
-            toolchain-nn6000v2-daed-
 
-      - name: Restore ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.ccache
-          key: ccache-nn6000v2-daed-${{ github.run_id }}
-          restore-keys: |
-            ccache-nn6000v2-daed-
-
-      # 只编译 daed 这一个包，不编整个固件。
-      # 如果工具链缓存命中，这一步应该比全量编译快得多。
-      - name: Build only daed package
-        run: |
-          cd source
-          export CCACHE_DIR=~/.ccache
-          make tools/install toolchain/install -j$(nproc)
-          make target/toolchain/install -j$(nproc)
-          make package/dae/compile V=s -j$(nproc)
-
-      # OpenWrt/ImmortalWrt 构建系统自带的索引生成命令，
-      # 会根据当前是 apk 还是 opkg 自动生成对应格式的索引文件。
-      - name: Generate package index
-        run: |
-          cd source
-          make package/index V=s
-
-      - name: Collect feed files
-        run: |
-          mkdir -p /tmp/feed
-          cd source
-          # bin/packages/<arch>/base 等目录里已经包含编出来的包和自动生成的索引
-          find bin/packages -maxdepth 2 -type d
-          cp -r bin/packages/* /tmp/feed/
-          echo "===== 最终发布内容 ====="
-          find /tmp/feed -maxdepth 3
-
-      - name: Upload to GitHub Pages
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: /tmp/feed
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+            source/bin/targets/qualcommax/ipq60xx/*-sysupgrade.bin
+            source/bin/targets/qualcommax/ipq60xx/*-initramfs*
