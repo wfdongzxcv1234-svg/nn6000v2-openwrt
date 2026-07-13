@@ -48,66 +48,62 @@ jobs:
       run: |
         cd source
 
-        # 清空默认配置
+        # 1. 清空旧配置，生成设备基础配置
         rm -f .config
-
-        # --- 目标设备 ---
-        ./scripts/config -e TARGET_qualcommax
-        ./scripts/config -e TARGET_qualcommax_ipq60xx
-        ./scripts/config -e TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2
-
-        # --- 包管理器：强制使用 apk (25.12 默认就是 apk，这里显式确认) ---
-        ./scripts/config -e PACKAGE_apk-mbedtls
-
-        # --- 基础内核功能（全功能内核） ---
-        # 这些是 OpenWrt 稳定版默认开启的核心功能，无需额外配置，
-        # 但为了保险，确保必要的网络/存储/文件系统支持都已包含。
-        # 你可以通过 make kernel_menuconfig 查看完整列表。
-        # 此处只列出关键项：
-
-        # --- eBPF / BTF 支持（DAED 必需） ---
-        ./scripts/config -e KERNEL_BPF
-        ./scripts/config -e KERNEL_BPF_SYSCALL
-        ./scripts/config -e KERNEL_BPF_JIT
-        ./scripts/config -e KERNEL_CGROUP_BPF
-        ./scripts/config -e KERNEL_DEBUG_INFO
-        ./scripts/config -e KERNEL_DEBUG_INFO_BTF
-        ./scripts/config -d KERNEL_DEBUG_INFO_REDUCED
-
-        # --- XDP_SOCKETS 支持（kmod-xdp-sockets-diag 依赖） ---
-        ./scripts/config -e KERNEL_XDP_SOCKETS
-
-        # --- DAED 所需的内核模块 ---
-        ./scripts/config -e PACKAGE_kmod-sched-core
-        ./scripts/config -e PACKAGE_kmod-sched-bpf
-        ./scripts/config -e PACKAGE_kmod-xdp-sockets-diag
-
-        # --- 基础网络组件（LuCI 等） ---
-        # 注意：这些是“应用”，按需安装，但 LuCI 是 Web 界面，
-        # 如果你不需要完全无界面，可以保留。
-        ./scripts/config -e PACKAGE_luci
-        ./scripts/config -e PACKAGE_luci-base
-        ./scripts/config -e PACKAGE_luci-i18n-base-zh-cn
-
-        # 防火墙 (nftables)
-        ./scripts/config -e PACKAGE_firewall4
-        ./scripts/config -e PACKAGE_nftables
-
-        # DNS
-        ./scripts/config -e PACKAGE_dnsmasq-full
-
-        # IPv6
-        ./scripts/config -e PACKAGE_ipv6helper
-        ./scripts/config -e PACKAGE_odhcp6c
-        ./scripts/config -e PACKAGE_odhcpd-ipv6only
-
-        # 常用工具（按需）
-        ./scripts/config -e PACKAGE_curl
-        ./scripts/config -e PACKAGE_ca-bundle
-        ./scripts/config -e PACKAGE_ca-certificates
-
-        # --- 生成最终 .config（自动解决依赖） ---
         make defconfig
+
+        # 2. 用 echo 追加我们需要的配置项
+        cat >> .config <<EOF
+        # ---- 目标设备（覆盖 defconfig 中的默认值） ----
+        CONFIG_TARGET_qualcommax=y
+        CONFIG_TARGET_qualcommax_ipq60xx=y
+        CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y
+
+        # ---- 包管理器（25.12 默认是 apk，显式启用） ----
+        CONFIG_PACKAGE_apk-mbedtls=y
+
+        # ---- LuCI 及中文 ----
+        CONFIG_PACKAGE_luci=y
+        CONFIG_PACKAGE_luci-base=y
+        CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+
+        # ---- 防火墙 (nftables) ----
+        CONFIG_PACKAGE_firewall4=y
+        CONFIG_PACKAGE_nftables=y
+
+        # ---- DNS ----
+        CONFIG_PACKAGE_dnsmasq-full=y
+
+        # ---- IPv6 ----
+        CONFIG_PACKAGE_ipv6helper=y
+        CONFIG_PACKAGE_odhcp6c=y
+        CONFIG_PACKAGE_odhcpd-ipv6only=y
+
+        # ---- DAED 所需的内核模块 ----
+        CONFIG_PACKAGE_kmod-sched-core=y
+        CONFIG_PACKAGE_kmod-sched-bpf=y
+        CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
+
+        # ---- eBPF / BTF 支持 ----
+        CONFIG_KERNEL_BPF=y
+        CONFIG_KERNEL_BPF_SYSCALL=y
+        CONFIG_KERNEL_BPF_JIT=y
+        CONFIG_KERNEL_CGROUP_BPF=y
+        CONFIG_KERNEL_DEBUG_INFO=y
+        CONFIG_KERNEL_DEBUG_INFO_BTF=y
+        # CONFIG_KERNEL_DEBUG_INFO_REDUCED is not set   # 显式取消
+
+        # ---- XDP_SOCKETS（kmod-xdp-sockets-diag 依赖） ----
+        CONFIG_KERNEL_XDP_SOCKETS=y
+
+        # ---- 常用工具 ----
+        CONFIG_PACKAGE_curl=y
+        CONFIG_PACKAGE_ca-bundle=y
+        CONFIG_PACKAGE_ca-certificates=y
+        EOF
+
+        # 3. 用 olddefconfig 自动处理依赖和新选项
+        make olddefconfig
 
     - name: Download and compile
       run: |
@@ -118,8 +114,8 @@ jobs:
     - name: Verify kernel module and BTF support
       run: |
         cd source
-        echo "=== 确认 apk 包管理器 ==="
-        grep "CONFIG_PACKAGE_apk" .config || echo "apk 可能未显式开启，请检查"
+        echo "=== 确认 apk 包管理器配置 ==="
+        grep "CONFIG_PACKAGE_apk" .config || echo "apk 未显式开启，请检查"
         echo "=== BTF 配置 ==="
         grep -E "CONFIG_KERNEL_DEBUG_INFO_BTF|CONFIG_KERNEL_XDP_SOCKETS" .config || true
         echo "=== kmod-xdp-sockets-diag 编译产物 ==="
