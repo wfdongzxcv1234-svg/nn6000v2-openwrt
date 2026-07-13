@@ -1,0 +1,77 @@
+- name: Configure target and Fix device compatibility
+      run: |
+        cd source
+
+        # 1. 先生成基础的默认配置，确保 target 目录和脚本加载完毕
+        rm -f .config
+        
+        # 强制写入目标设备和架构配置
+        cat >> .config <<EOF
+        CONFIG_TARGET_qualcommax=y
+        CONFIG_TARGET_qualcommax_ipq60xx=y
+        CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y
+        EOF
+        
+        make defconfig
+
+        # 2. 动态修正设备 Makefile (针对 qualcommax/ipq60xx.mk)
+        # 稳妥做法：不管里面原本写了什么，直接在定义块内强制塞入标准的 SUPPORTED_DEVICES
+        IMAGE_DIR="target/linux/qualcommax/image"
+        if [ -f "$IMAGE_DIR/ipq60xx.mk" ]; then
+            echo "=== 正在修正 ipq60xx.mk ==="
+            # 清理可能存在的旧 SUPPORTED_DEVICES 行
+            sed -i '/define Device\/link_nn6000-v2/,/endef/ {/SUPPORTED_DEVICES/d}' "$IMAGE_DIR/ipq60xx.mk"
+            # 在 define Device/link_nn6000-v2 下方直接插入一行
+            sed -i '/define Device\/link_nn6000-v2/a \  SUPPORTED_DEVICES := link,nn6000-v2' "$IMAGE_DIR/ipq60xx.mk"
+            
+            # 打印出来确认是否成功插入
+            sed -n '/define Device\/link_nn6000-v2/,/endef/p' "$IMAGE_DIR/ipq60xx.mk"
+        fi
+
+        # 3. 追加你需要的其他功能组件配置
+        cat >> .config <<EOF
+        # ---- 包管理器（25.12 默认是 apk，显式启用） ----
+        CONFIG_PACKAGE_apk-mbedtls=y
+
+        # ---- LuCI 及中文 ----
+        CONFIG_PACKAGE_luci=y
+        CONFIG_PACKAGE_luci-base=y
+        CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+
+        # ---- 防火墙 (nftables) ----
+        CONFIG_PACKAGE_firewall4=y
+        CONFIG_PACKAGE_nftables=y
+
+        # ---- DNS ----
+        CONFIG_PACKAGE_dnsmasq-full=y
+
+        # ---- IPv6 ----
+        CONFIG_PACKAGE_ipv6helper=y
+        CONFIG_PACKAGE_odhcp6c=y
+        CONFIG_PACKAGE_odhcpd-ipv6only=y
+
+        # ---- DAED 所需的内核模块 ----
+        CONFIG_PACKAGE_kmod-sched-core=y
+        CONFIG_PACKAGE_kmod-sched-bpf=y
+        CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
+
+        # ---- eBPF / BTF 支持（启用 REDUCED 以缩小内核体积） ----
+        CONFIG_KERNEL_BPF=y
+        CONFIG_KERNEL_BPF_SYSCALL=y
+        CONFIG_KERNEL_BPF_JIT=y
+        CONFIG_KERNEL_CGROUP_BPF=y
+        CONFIG_KERNEL_DEBUG_INFO=y
+        CONFIG_KERNEL_DEBUG_INFO_BTF=y
+        CONFIG_KERNEL_DEBUG_INFO_REDUCED=y
+
+        # ---- XDP_SOCKETS（kmod-xdp-sockets-diag 依赖） ----
+        CONFIG_KERNEL_XDP_SOCKETS=y
+
+        # ---- 常用工具 ----
+        CONFIG_PACKAGE_curl=y
+        CONFIG_PACKAGE_ca-bundle=y
+        CONFIG_PACKAGE_ca-certificates=y
+        EOF
+
+        # 4. 最后执行 oldconfig 刷新并补全依赖
+        yes "" | make oldconfig
