@@ -63,6 +63,33 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
+    - name: Fix device compatibility (patch SUPPORTED_DEVICES)
+      run: |
+        cd source
+        
+        # 方法1: 修改设备 Makefile，强制设置 SUPPORTED_DEVICES
+        IMAGE_DIR="target/linux/qualcommax/image"
+        if [ -f "$IMAGE_DIR/ipq60xx.mk" ]; then
+            # 在 link_nn6000-v2 的定义中添加或修改 SUPPORTED_DEVICES
+            sed -i '/define Device\/link_nn6000-v2/,/endef/ s/SUPPORTED_DEVICES := .*/SUPPORTED_DEVICES := link,nn6000-v2/' "$IMAGE_DIR/ipq60xx.mk"
+            # 如果没有找到 SUPPORTED_DEVICES 行，在 endef 前插入
+            if ! grep -A5 "define Device/link_nn6000-v2" "$IMAGE_DIR/ipq60xx.mk" | grep -q "SUPPORTED_DEVICES"; then
+                sed -i '/define Device\/link_nn6000-v2/,/endef/ s/endef/  SUPPORTED_DEVICES := link,nn6000-v2\nendef/' "$IMAGE_DIR/ipq60xx.mk"
+            fi
+            echo "已修改 ipq60xx.mk 中的 SUPPORTED_DEVICES"
+            grep -A10 "define Device/link_nn6000-v2" "$IMAGE_DIR/ipq60xx.mk"
+        else
+            echo "警告: 未找到 ipq60xx.mk，请检查路径"
+        fi
+
+        # 方法2: 修改 DTS 中的兼容字符串
+        DTS_DIR="target/linux/qualcommax/files/arch/arm64/boot/dts/qcom"
+        if [ -f "$DTS_DIR/ipq6000-nn6000-v2.dts" ]; then
+            sed -i 's/compatible = "link,nn6000-v2", "qcom,ipq6000";/compatible = "link,nn6000-v2";/' "$DTS_DIR/ipq6000-nn6000-v2.dts"
+            echo "已修改 DTS 兼容字符串"
+            grep "compatible" "$DTS_DIR/ipq6000-nn6000-v2.dts"
+        fi
+
     - name: Configure target, packages, and kernel options
       run: |
         cd source
@@ -77,9 +104,6 @@ jobs:
         CONFIG_TARGET_qualcommax=y
         CONFIG_TARGET_qualcommax_ipq60xx=y
         CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y
-
-        # ---- 强制设置设备支持的兼容字符串（解决刷机不匹配问题） ----
-        CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v2_SUPPORTED_DEVICES="link,nn6000-v2"
 
         # ---- 包管理器（25.12 默认是 apk，显式启用） ----
         CONFIG_PACKAGE_apk-mbedtls=y
@@ -129,7 +153,7 @@ jobs:
 
         # 4. 检查关键配置（调试用）
         echo "=== 设备支持列表 ==="
-        grep "CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v2_SUPPORTED_DEVICES" .config || true
+        grep "CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v2" .config || true
         echo "=== 内核大小相关配置 ==="
         grep -E "CONFIG_KERNEL_DEBUG_INFO_REDUCED|CONFIG_KERNEL_DEBUG_INFO_BTF" .config || true
 
