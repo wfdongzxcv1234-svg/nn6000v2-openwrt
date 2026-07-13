@@ -1,4 +1,4 @@
-name: Build ImmortalWrt NN6000 V2 DAED kmods
+name: Build ImmortalWrt NN6000 V2 DAED kmods (based on 25.12)
 
 on:
   workflow_dispatch:
@@ -8,9 +8,10 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Clone ImmortalWrt (snapshot)
+    - name: Clone ImmortalWrt (25.12 stable branch)
       run: |
         git clone --depth=1 \
+        --branch openwrt-25.12 \
         https://github.com/immortalwrt/immortalwrt.git source
 
     - name: Install dependencies
@@ -47,15 +48,43 @@ jobs:
       run: |
         cd source
 
-        # 清空默认配置（可选）
+        # 清空默认配置
         rm -f .config
 
-        # 使用 scripts/config 设置目标设备
+        # --- 目标设备 ---
         ./scripts/config -e TARGET_qualcommax
         ./scripts/config -e TARGET_qualcommax_ipq60xx
         ./scripts/config -e TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2
 
-        # LuCI 及中文支持
+        # --- 包管理器：强制使用 apk (25.12 默认就是 apk，这里显式确认) ---
+        ./scripts/config -e PACKAGE_apk-mbedtls
+
+        # --- 基础内核功能（全功能内核） ---
+        # 这些是 OpenWrt 稳定版默认开启的核心功能，无需额外配置，
+        # 但为了保险，确保必要的网络/存储/文件系统支持都已包含。
+        # 你可以通过 make kernel_menuconfig 查看完整列表。
+        # 此处只列出关键项：
+
+        # --- eBPF / BTF 支持（DAED 必需） ---
+        ./scripts/config -e KERNEL_BPF
+        ./scripts/config -e KERNEL_BPF_SYSCALL
+        ./scripts/config -e KERNEL_BPF_JIT
+        ./scripts/config -e KERNEL_CGROUP_BPF
+        ./scripts/config -e KERNEL_DEBUG_INFO
+        ./scripts/config -e KERNEL_DEBUG_INFO_BTF
+        ./scripts/config -d KERNEL_DEBUG_INFO_REDUCED
+
+        # --- XDP_SOCKETS 支持（kmod-xdp-sockets-diag 依赖） ---
+        ./scripts/config -e KERNEL_XDP_SOCKETS
+
+        # --- DAED 所需的内核模块 ---
+        ./scripts/config -e PACKAGE_kmod-sched-core
+        ./scripts/config -e PACKAGE_kmod-sched-bpf
+        ./scripts/config -e PACKAGE_kmod-xdp-sockets-diag
+
+        # --- 基础网络组件（LuCI 等） ---
+        # 注意：这些是“应用”，按需安装，但 LuCI 是 Web 界面，
+        # 如果你不需要完全无界面，可以保留。
         ./scripts/config -e PACKAGE_luci
         ./scripts/config -e PACKAGE_luci-base
         ./scripts/config -e PACKAGE_luci-i18n-base-zh-cn
@@ -67,34 +96,17 @@ jobs:
         # DNS
         ./scripts/config -e PACKAGE_dnsmasq-full
 
-        # IPv6 支持
+        # IPv6
         ./scripts/config -e PACKAGE_ipv6helper
         ./scripts/config -e PACKAGE_odhcp6c
         ./scripts/config -e PACKAGE_odhcpd-ipv6only
 
-        # DAED 所需的内核模块
-        ./scripts/config -e PACKAGE_kmod-sched-core
-        ./scripts/config -e PACKAGE_kmod-sched-bpf
-        ./scripts/config -e PACKAGE_kmod-xdp-sockets-diag
-
-        # eBPF 及 BTF 必需的内核选项
-        ./scripts/config -e KERNEL_BPF
-        ./scripts/config -e KERNEL_BPF_SYSCALL
-        ./scripts/config -e KERNEL_BPF_JIT
-        ./scripts/config -e KERNEL_CGROUP_BPF
-        ./scripts/config -e KERNEL_DEBUG_INFO
-        ./scripts/config -e KERNEL_DEBUG_INFO_BTF
-        ./scripts/config -d KERNEL_DEBUG_INFO_REDUCED
-
-        # 关键：启用 XDP_SOCKETS 支持（kmod-xdp-sockets-diag 依赖）
-        ./scripts/config -e KERNEL_XDP_SOCKETS
-
-        # 常用工具
+        # 常用工具（按需）
         ./scripts/config -e PACKAGE_curl
         ./scripts/config -e PACKAGE_ca-bundle
         ./scripts/config -e PACKAGE_ca-certificates
 
-        # 生成最终 .config（自动解决依赖）
+        # --- 生成最终 .config（自动解决依赖） ---
         make defconfig
 
     - name: Download and compile
@@ -106,9 +118,11 @@ jobs:
     - name: Verify kernel module and BTF support
       run: |
         cd source
-        echo "=== BTF configuration ==="
+        echo "=== 确认 apk 包管理器 ==="
+        grep "CONFIG_PACKAGE_apk" .config || echo "apk 可能未显式开启，请检查"
+        echo "=== BTF 配置 ==="
         grep -E "CONFIG_KERNEL_DEBUG_INFO_BTF|CONFIG_KERNEL_XDP_SOCKETS" .config || true
-        echo "=== kmod-xdp-sockets-diag build artifacts ==="
+        echo "=== kmod-xdp-sockets-diag 编译产物 ==="
         find build_dir -name "kmod-xdp-sockets-diag*" | head -5
         echo "=== vmlinux (BTF info) ==="
         find build_dir -name vmlinux | head -5
@@ -116,7 +130,7 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: NN6000-V2-ImmortalWrt-DAED
+        name: NN6000-V2-ImmortalWrt-25.12-DAED
         path: |
           source/bin/targets/qualcommax/ipq60xx/*-sysupgrade.bin
           source/bin/targets/qualcommax/ipq60xx/packages/
