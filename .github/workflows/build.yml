@@ -3,28 +3,19 @@ name: Build ImmortalWrt NN6000 V2 DAED kmods
 on:
   workflow_dispatch:
 
-
 jobs:
-
   build:
-
     runs-on: ubuntu-22.04
 
-
     steps:
-
-
-    - name: Clone ImmortalWrt
+    - name: Clone ImmortalWrt (snapshot)
       run: |
         git clone --depth=1 \
         https://github.com/immortalwrt/immortalwrt.git source
 
-
     - name: Install dependencies
       run: |
-
         sudo apt update
-
         sudo apt install -y \
           build-essential \
           clang \
@@ -46,159 +37,86 @@ jobs:
           dwarves \
           pahole
 
-
-
     - name: Update feeds
       run: |
-
         cd source
-
         ./scripts/feeds update -a
-
         ./scripts/feeds install -a
 
-
-
-    - name: Configure
-
+    - name: Configure target, packages, and kernel options
       run: |
-
         cd source
 
-
+        # 清空默认配置（可选）
         rm -f .config
 
+        # 使用 scripts/config 设置目标设备
+        ./scripts/config -e TARGET_qualcommax
+        ./scripts/config -e TARGET_qualcommax_ipq60xx
+        ./scripts/config -e TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2
 
-        #
-        # NN6000 V2
-        #
+        # LuCI 及中文支持
+        ./scripts/config -e PACKAGE_luci
+        ./scripts/config -e PACKAGE_luci-base
+        ./scripts/config -e PACKAGE_luci-i18n-base-zh-cn
 
-        echo "CONFIG_TARGET_qualcommax=y" >> .config
-        echo "CONFIG_TARGET_qualcommax_ipq60xx=y" >> .config
-        echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
+        # 防火墙 (nftables)
+        ./scripts/config -e PACKAGE_firewall4
+        ./scripts/config -e PACKAGE_nftables
 
-
-
-        #
-        # LuCI
-        #
-
-        echo "CONFIG_PACKAGE_luci=y" >> .config
-        echo "CONFIG_PACKAGE_luci-base=y" >> .config
-        echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
-
-
-
-        #
-        # Firewall4 nftables
-        #
-
-        echo "CONFIG_PACKAGE_firewall4=y" >> .config
-        echo "CONFIG_PACKAGE_nftables=y"
-
-
-
-        #
         # DNS
-        #
+        ./scripts/config -e PACKAGE_dnsmasq-full
 
-        echo "CONFIG_PACKAGE_dnsmasq-full=y" >> .config
+        # IPv6 支持
+        ./scripts/config -e PACKAGE_ipv6helper
+        ./scripts/config -e PACKAGE_odhcp6c
+        ./scripts/config -e PACKAGE_odhcpd-ipv6only
 
+        # DAED 所需的内核模块
+        ./scripts/config -e PACKAGE_kmod-sched-core
+        ./scripts/config -e PACKAGE_kmod-sched-bpf
+        ./scripts/config -e PACKAGE_kmod-xdp-sockets-diag
 
+        # eBPF 及 BTF 必需的内核选项
+        ./scripts/config -e KERNEL_BPF
+        ./scripts/config -e KERNEL_BPF_SYSCALL
+        ./scripts/config -e KERNEL_BPF_JIT
+        ./scripts/config -e KERNEL_CGROUP_BPF
+        ./scripts/config -e KERNEL_DEBUG_INFO
+        ./scripts/config -e KERNEL_DEBUG_INFO_BTF
+        ./scripts/config -d KERNEL_DEBUG_INFO_REDUCED
 
-        #
-        # IPv6
-        #
+        # 关键：启用 XDP_SOCKETS 支持（kmod-xdp-sockets-diag 依赖）
+        ./scripts/config -e KERNEL_XDP_SOCKETS
 
-        echo "CONFIG_PACKAGE_ipv6helper=y" >> .config
-        echo "CONFIG_PACKAGE_odhcp6c=y" >> .config
-        echo "CONFIG_PACKAGE_odhcpd-ipv6only=y" >> .config
+        # 常用工具
+        ./scripts/config -e PACKAGE_curl
+        ./scripts/config -e PACKAGE_ca-bundle
+        ./scripts/config -e PACKAGE_ca-certificates
 
-
-
-        #
-        # DAED kernel modules
-        #
-
-        echo "CONFIG_PACKAGE_kmod-sched-core=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-sched-bpf=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-xdp-sockets-diag=y" >> .config
-
-
-
-        #
-        # eBPF
-        #
-
-        echo "CONFIG_KERNEL_BPF=y" >> .config
-        echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
-        echo "CONFIG_KERNEL_BPF_JIT=y" >> .config
-        echo "CONFIG_KERNEL_CGROUP_BPF=y" >> .config
-
-
-
-        #
-        # BTF
-        #
-
-        echo "CONFIG_KERNEL_DEBUG_INFO=y" >> .config
-        echo "CONFIG_KERNEL_DEBUG_INFO_BTF=y" >> .config
-        echo "CONFIG_KERNEL_DEBUG_INFO_REDUCED=n" >> .config
-
-
-
-        #
-        # tools
-        #
-
-        echo "CONFIG_PACKAGE_curl=y" >> .config
-        echo "CONFIG_PACKAGE_ca-bundle=y"
-        echo "CONFIG_PACKAGE_ca-certificates=y"
-
-
-
-        #
-        # normalize
-        #
-
+        # 生成最终 .config（自动解决依赖）
         make defconfig
 
-
-
-    - name: Compile
-
+    - name: Download and compile
       run: |
-
         cd source
-
         make download -j8
-
         make -j$(nproc) V=s
 
-
-
-    - name: Check XDP BTF
-
+    - name: Verify kernel module and BTF support
       run: |
-
         cd source
+        echo "=== BTF configuration ==="
+        grep -E "CONFIG_KERNEL_DEBUG_INFO_BTF|CONFIG_KERNEL_XDP_SOCKETS" .config || true
+        echo "=== kmod-xdp-sockets-diag build artifacts ==="
+        find build_dir -name "kmod-xdp-sockets-diag*" | head -5
+        echo "=== vmlinux (BTF info) ==="
+        find build_dir -name vmlinux | head -5
 
-        grep BTF .config || true
-
-        find build_dir -name vmlinux | head
-
-
-
-    - name: Upload
-
+    - name: Upload artifacts
       uses: actions/upload-artifact@v4
-
       with:
-
         name: NN6000-V2-ImmortalWrt-DAED
-
         path: |
-
           source/bin/targets/qualcommax/ipq60xx/*-sysupgrade.bin
-
-          source/bin/targets/qualcommax/ipq60xx/packages/*
+          source/bin/targets/qualcommax/ipq60xx/packages/
