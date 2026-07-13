@@ -67,28 +67,36 @@ jobs:
       run: |
         cd source
         
-        # 方法1: 修改设备 Makefile，强制设置 SUPPORTED_DEVICES
-        IMAGE_DIR="target/linux/qualcommax/image"
-        if [ -f "$IMAGE_DIR/ipq60xx.mk" ]; then
-            # 在 link_nn6000-v2 的定义中添加或修改 SUPPORTED_DEVICES
-            sed -i '/define Device\/link_nn6000-v2/,/endef/ s/SUPPORTED_DEVICES := .*/SUPPORTED_DEVICES := link,nn6000-v2/' "$IMAGE_DIR/ipq60xx.mk"
-            # 如果没有找到 SUPPORTED_DEVICES 行，在 endef 前插入
-            if ! grep -A5 "define Device/link_nn6000-v2" "$IMAGE_DIR/ipq60xx.mk" | grep -q "SUPPORTED_DEVICES"; then
-                sed -i '/define Device\/link_nn6000-v2/,/endef/ s/endef/  SUPPORTED_DEVICES := link,nn6000-v2\nendef/' "$IMAGE_DIR/ipq60xx.mk"
+        # ---- 修改 ipq60xx.mk 强制设置 SUPPORTED_DEVICES ----
+        IMAGE_FILE="target/linux/qualcommax/image/ipq60xx.mk"
+        if [ -f "$IMAGE_FILE" ]; then
+            echo "找到 ipq60xx.mk，正在修改..."
+            # 先检查是否已有 SUPPORTED_DEVICES 行，若有则替换，否则在 endef 前插入
+            if grep -A5 "define Device/link_nn6000-v2" "$IMAGE_FILE" | grep -q "SUPPORTED_DEVICES"; then
+                sed -i '/define Device\/link_nn6000-v2/,/endef/ s/SUPPORTED_DEVICES := .*/SUPPORTED_DEVICES := link,nn6000-v2/' "$IMAGE_FILE"
+                echo "已替换 SUPPORTED_DEVICES 行"
+            else
+                # 在 endef 前插入一行
+                sed -i '/define Device\/link_nn6000-v2/,/endef/ s/endef/  SUPPORTED_DEVICES := link,nn6000-v2\nendef/' "$IMAGE_FILE"
+                echo "已插入 SUPPORTED_DEVICES 行"
             fi
-            echo "已修改 ipq60xx.mk 中的 SUPPORTED_DEVICES"
-            grep -A10 "define Device/link_nn6000-v2" "$IMAGE_DIR/ipq60xx.mk"
+            # 显示修改后的部分
+            grep -A10 "define Device/link_nn6000-v2" "$IMAGE_FILE"
         else
-            echo "警告: 未找到 ipq60xx.mk，请检查路径"
+            echo "警告: 未找到 ipq60xx.mk，跳过修改"
         fi
 
-        # 方法2: 修改 DTS 中的兼容字符串
-        DTS_DIR="target/linux/qualcommax/files/arch/arm64/boot/dts/qcom"
-        if [ -f "$DTS_DIR/ipq6000-nn6000-v2.dts" ]; then
-            sed -i 's/compatible = "link,nn6000-v2", "qcom,ipq6000";/compatible = "link,nn6000-v2";/' "$DTS_DIR/ipq6000-nn6000-v2.dts"
-            echo "已修改 DTS 兼容字符串"
-            grep "compatible" "$DTS_DIR/ipq6000-nn6000-v2.dts"
+        # ---- 修改 DTS 兼容字符串（可选，若存在则修改） ----
+        DTS_FILE="target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-nn6000-v2.dts"
+        if [ -f "$DTS_FILE" ]; then
+            echo "找到 DTS 文件，正在修改兼容字符串..."
+            sed -i 's/compatible = "link,nn6000-v2", "qcom,ipq6000";/compatible = "link,nn6000-v2";/' "$DTS_FILE"
+            grep "compatible" "$DTS_FILE"
+        else
+            echo "警告: 未找到 DTS 文件，跳过修改"
         fi
+        
+        echo "设备兼容性修复完成"
 
     - name: Configure target, packages, and kernel options
       run: |
