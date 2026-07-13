@@ -1,10 +1,19 @@
-name: Build NN6000 V2 Firmware (daed-ready)
+name: Publish daed package feed
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
-  build:
+  build-and-publish:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -51,18 +60,17 @@ jobs:
           restore-keys: |
             dl-
 
-      - name: Configure NN6000 V2
+      # 关键：这里的 .config 必须跟你编译基础固件时用的目标+内核配置完全一致，
+      # 否则编出来的 daed 包跟你路由器上的内核/库版本对不上，装不上去。
+      - name: Configure (must match base firmware config)
         run: |
           cd source
           rm -f .config
 
-          # ==================== 目标设备 ====================
           echo "CONFIG_TARGET_qualcommax=y" > .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx=y" >> .config
           echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
 
-          # ==================== daed 官方要求的内核 BTF/eBPF 配置 ====================
-          # 来源：QiuSimons/luci-app-daed 官方 README
           echo "CONFIG_DEVEL=y" >> .config
           echo "CONFIG_KERNEL_DEBUG_INFO=y" >> .config
           echo "CONFIG_KERNEL_DEBUG_INFO_REDUCED=n" >> .config
@@ -74,18 +82,12 @@ jobs:
           echo "CONFIG_KERNEL_XDP_SOCKETS=y" >> .config
           echo "CONFIG_PACKAGE_kmod-xdp-sockets-diag=y" >> .config
 
-          # ==================== daed 本体 ====================
           echo "CONFIG_PACKAGE_luci-app-daed=y" >> .config
-
-          # ==================== 保留：基础中文语言包（非默认但常用，不影响其余内容与稳定版一致）====================
-          echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
-
-          # 2GB 内存优化：关闭 zram-swap（跟你之前保留的逻辑一致）
-          echo "# CONFIG_PACKAGE_zram-swap is not set" >> .config
+          echo "CONFIG_CCACHE=y" >> .config
 
           make defconfig
 
-      - name: Cache toolchain
+      - name: Restore toolchain cache
         uses: actions/cache@v4
         with:
           path: |
@@ -96,7 +98,7 @@ jobs:
           restore-keys: |
             toolchain-nn6000v2-daed-
 
-      - name: Cache ccache
+      - name: Restore ccache
         uses: actions/cache@v4
         with:
           path: ~/.ccache
@@ -104,63 +106,38 @@ jobs:
           restore-keys: |
             ccache-nn6000v2-daed-
 
-      - name: Build firmware
+      # 只编译 daed 这一个包，不编整个固件。
+      # 如果工具链缓存命中，这一步应该比全量编译快得多。
+      - name: Build only daed package
         run: |
           cd source
           export CCACHE_DIR=~/.ccache
-          echo "CONFIG_CCACHE=y" >> .config
-          make defconfig
-          make -j$(nproc) 2>&1 | tee build.log
+          make tools/install toolchain/install -j$(nproc)
+          make target/toolchain/install -j$(nproc)
+          make package/dae/compile V=s -j$(nproc)
 
-      - name: Debug - check actual kernel .config used
+      # OpenWrt/ImmortalWrt 构建系统自带的索引生成命令，
+      # 会根据当前是 apk 还是 opkg 自动生成对应格式的索引文件。
+      - name: Generate package index
         run: |
           cd source
-          KCONFIG=$(find build_dir -maxdepth 4 -name .config \
-            -path "*linux-qualcommax_ipq60xx/linux-*" \
-            ! -path "*backports*" ! -path "*mac80211*" | head -n1)
-          echo "内核 config 路径: $KCONFIG"
-          if [ -z "$KCONFIG" ]; then
-            echo "没找到主内核 .config，列出目录结构方便排查："
-            find build_dir/target-aarch64_cortex-a53_musl/linux-qualcommax_ipq60xx -maxdepth 1 -type d
-          else
-            grep -i "debug_info\|btf\|cgroup_bpf\|bpf_events" "$KCONFIG" || echo "文件存在但没有相关行"
-          fi
+          make package/index V=s
 
-      - name: Debug - grep BTF related lines from build log
+      - name: Collect feed files
         run: |
+          mkdir -p /tmp/feed
           cd source
-          if [ ! -f build.log ]; then
-            echo "::error::build.log 不存在"
-            exit 1
-          fi
-          echo "===== pahole 相关 ====="
-          grep -i "pahole" build.log || echo "没有 pahole 相关日志"
-          echo "===== BTF 相关 ====="
-          grep -i "btf" build.log | head -80 || echo "没有 BTF 相关日志"
+          # bin/packages/<arch>/base 等目录里已经包含编出来的包和自动生成的索引
+          find bin/packages -maxdepth 2 -type d
+          cp -r bin/packages/* /tmp/feed/
+          echo "===== 最终发布内容 ====="
+          find /tmp/feed -maxdepth 3
 
-      - name: Verify BTF was generated
-        run: |
-          cd source
-          VMLINUX=$(find build_dir -type f -name vmlinux -path "*qualcommax*" | head -n1)
-          if [ -z "$VMLINUX" ]; then
-            echo "::warning::未找到 vmlinux"
-            exit 0
-          fi
-          echo "检查文件: $VMLINUX"
-          if readelf -S "$VMLINUX" 2>/dev/null | grep -q '\.BTF'; then
-            echo "✅ BTF section 存在"
-          else
-            echo "::error::vmlinux 中没有 .BTF section！"
-            exit 1
-          fi
-
-      - name: Verify daed package was built
-        run: |
-          cd source
-          find bin -iname "*daed*" -o -iname "*luci-app-daed*"
-
-      - name: Upload firmware artifacts
-        uses: actions/upload-artifact@v4
+      - name: Upload to GitHub Pages
+        uses: actions/upload-pages-artifact@v3
         with:
-          name: nn6000-v2-firmware-daed
-          path: source/bin/targets/**/*
+          path: /tmp/feed
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
