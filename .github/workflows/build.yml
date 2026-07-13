@@ -1,5 +1,4 @@
-name: Build ImmortalWrt 25.12 NN6000 V2 DAED BTF
-
+name: Build ImmortalWrt NN6000 V2 DAED kmods
 
 on:
   workflow_dispatch:
@@ -15,51 +14,41 @@ jobs:
     steps:
 
 
-    - name: Clone ImmortalWrt 25.12
-
+    - name: Clone ImmortalWrt
       run: |
-
-        git clone \
-        --depth=1 \
-        -b openwrt-25.12 \
+        git clone --depth=1 \
         https://github.com/immortalwrt/immortalwrt.git source
 
 
-
     - name: Install dependencies
-
       run: |
 
         sudo apt update
 
         sudo apt install -y \
-        build-essential \
-        clang \
-        flex \
-        bison \
-        gawk \
-        gettext \
-        git \
-        libncurses-dev \
-        libssl-dev \
-        python3 \
-        python3-pyelftools \
-        python3-setuptools \
-        rsync \
-        subversion \
-        swig \
-        unzip \
-        wget \
-        zlib1g-dev \
-        file \
-        zstd \
-        dwarves \
-        pahole
+          build-essential \
+          clang \
+          flex \
+          bison \
+          gawk \
+          gettext \
+          git \
+          libncurses-dev \
+          libssl-dev \
+          python3 \
+          python3-pyelftools \
+          rsync \
+          unzip \
+          wget \
+          zlib1g-dev \
+          file \
+          zstd \
+          dwarves \
+          pahole
 
 
 
     - name: Update feeds
-
       run: |
 
         cd source
@@ -70,7 +59,7 @@ jobs:
 
 
 
-    - name: Select NN6000 V2
+    - name: Configure
 
       run: |
 
@@ -80,130 +69,99 @@ jobs:
         rm -f .config
 
 
+        #
+        # NN6000 V2
+        #
+
         echo "CONFIG_TARGET_qualcommax=y" >> .config
-
         echo "CONFIG_TARGET_qualcommax_ipq60xx=y" >> .config
-
         echo "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" >> .config
 
 
 
-        make defconfig
+        #
+        # LuCI
+        #
 
-
-
-    - name: Add packages and kernel features
-
-      run: |
-
-        cd source
+        echo "CONFIG_PACKAGE_luci=y" >> .config
+        echo "CONFIG_PACKAGE_luci-base=y" >> .config
+        echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
 
 
 
         #
-        # DAED dependency
+        # Firewall4 nftables
         #
 
-        ./scripts/config \
-        -e PACKAGE_kmod-sched-core \
-        -e PACKAGE_kmod-sched-bpf \
-        -e PACKAGE_kmod-xdp-sockets-diag \
-        -e PACKAGE_kmod-veth
-
-
-
-        #
-        # Qualcomm switch
-
-        ./scripts/config \
-        -e PACKAGE_kmod-qca-ssdk
-
-
-
-        #
-        # Firewall
-
-        ./scripts/config \
-        -e PACKAGE_firewall4 \
-        -e PACKAGE_nftables
-
-
-
-        #
-        # IPv6
-
-        ./scripts/config \
-        -e PACKAGE_ipv6helper \
-        -e PACKAGE_odhcp6c \
-        -e PACKAGE_odhcpd-ipv6only \
-        -e PACKAGE_kmod-nf-conntrack6 \
-        -e PACKAGE_kmod-nft-nat6
+        echo "CONFIG_PACKAGE_firewall4=y" >> .config
+        echo "CONFIG_PACKAGE_nftables=y"
 
 
 
         #
         # DNS
+        #
 
-        ./scripts/config \
-        -e PACKAGE_dnsmasq-full
+        echo "CONFIG_PACKAGE_dnsmasq-full=y" >> .config
 
 
 
         #
-        # WireGuard
+        # IPv6
+        #
 
-        ./scripts/config \
-        -e PACKAGE_kmod-wireguard \
-        -e PACKAGE_wireguard-tools \
-        -e PACKAGE_luci-proto-wireguard
+        echo "CONFIG_PACKAGE_ipv6helper=y" >> .config
+        echo "CONFIG_PACKAGE_odhcp6c=y" >> .config
+        echo "CONFIG_PACKAGE_odhcpd-ipv6only=y" >> .config
 
 
 
         #
-        # HTTPS
+        # DAED kernel modules
+        #
 
-        ./scripts/config \
-        -e PACKAGE_ca-bundle \
-        -e PACKAGE_ca-certificates
+        echo "CONFIG_PACKAGE_kmod-sched-core=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-sched-bpf=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-xdp-sockets-diag=y" >> .config
 
 
 
         #
         # eBPF
+        #
 
-        ./scripts/config \
-        -e BPF \
-        -e BPF_SYSCALL \
-        -e BPF_JIT \
-        -e BPF_EVENTS \
-        -e CGROUP_BPF \
-        -e NET_CLS_BPF \
-        -e NET_ACT_BPF
+        echo "CONFIG_KERNEL_BPF=y" >> .config
+        echo "CONFIG_KERNEL_BPF_SYSCALL=y" >> .config
+        echo "CONFIG_KERNEL_BPF_JIT=y" >> .config
+        echo "CONFIG_KERNEL_CGROUP_BPF=y" >> .config
 
 
 
         #
         # BTF
+        #
 
-        ./scripts/config \
-        -e DEBUG_INFO \
-        -e DEBUG_INFO_BTF \
-        -e DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT \
-        -d DEBUG_INFO_REDUCED
+        echo "CONFIG_KERNEL_DEBUG_INFO=y" >> .config
+        echo "CONFIG_KERNEL_DEBUG_INFO_BTF=y" >> .config
+        echo "CONFIG_KERNEL_DEBUG_INFO_REDUCED=n" >> .config
 
 
+
+        #
+        # tools
+        #
+
+        echo "CONFIG_PACKAGE_curl=y" >> .config
+        echo "CONFIG_PACKAGE_ca-bundle=y"
+        echo "CONFIG_PACKAGE_ca-certificates=y"
+
+
+
+        #
+        # normalize
+        #
 
         make defconfig
-
-
-
-    - name: Download
-
-      run: |
-
-        cd source
-
-        make download -j8
 
 
 
@@ -213,69 +171,34 @@ jobs:
 
         cd source
 
+        make download -j8
+
         make -j$(nproc) V=s
 
 
 
-    - name: Check device
+    - name: Check XDP BTF
 
       run: |
 
         cd source
 
+        grep BTF .config || true
 
-        echo "===== DEVICE CHECK ====="
-
-
-        grep -R "nn6000" \
-        bin/targets/qualcommax/ipq60xx/ \
-        || true
+        find build_dir -name vmlinux | head
 
 
 
-
-    - name: Check BTF
-
-      run: |
-
-        cd source
-
-
-        VMLINUX=$(find build_dir \
-        -name vmlinux \
-        -path "*qualcommax*" | head -1)
-
-
-
-        if [ -z "$VMLINUX" ]; then
-
-          echo "vmlinux not found"
-
-          exit 0
-
-        fi
-
-
-
-        echo "checking $VMLINUX"
-
-
-
-        readelf -S "$VMLINUX" | grep BTF || true
-
-
-
-
-    - name: Upload firmware
+    - name: Upload
 
       uses: actions/upload-artifact@v4
 
-
       with:
 
-        name: ImmortalWrt-25.12-NN6000-V2-DAED-BTF
-
+        name: NN6000-V2-ImmortalWrt-DAED
 
         path: |
 
-          source/bin/targets/qualcommax/ipq60xx/*
+          source/bin/targets/qualcommax/ipq60xx/*-sysupgrade.bin
+
+          source/bin/targets/qualcommax/ipq60xx/packages/*
