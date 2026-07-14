@@ -1,0 +1,193 @@
+name: Build OpenWrt NN6000 V2 DAED kmods (master snapshot)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Free disk space
+      run: |
+        echo "=== 清理前磁盘空间 ==="
+        df -h
+        sudo apt clean
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        echo "=== 清理后磁盘空间 ==="
+        df -h
+
+    - name: Clone OpenWrt (master / snapshot branch)
+      run: |
+        # link_nn6000-v2 的设备支持是 2026-03-21 才合并进 openwrt/openwrt 的 main 分支
+        # (PR #21787)，ImmortalWrt 的 openwrt-25.12 稳定分支还没有同步这个设备，
+        # 手动 backport patch 又因为树结构差异 git am 失败。
+        # 所以这里直接从官方 master（滚动开发分支，即 openwrt.ai/Kwrt 用的同一条线）拉源码，
+        # 设备定义原生就在，不需要任何手动 patch。
+        # 注意：master 是滚动快照，没有 25.12 稳定，个别包版本可能会随上游变动，
+        # 但目前是拿到这个设备支持最简单可靠的办法。
+        git clone --depth=1 \
+        --branch master \
+        https://github.com/openwrt/openwrt.git source
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          build-essential \
+          clang \
+          flex \
+          bison \
+          gawk \
+          gettext \
+          git \
+          libncurses-dev \
+          libssl-dev \
+          python3 \
+          python3-pyelftools \
+          rsync \
+          unzip \
+          wget \
+          zlib1g-dev \
+          file \
+          zstd \
+          dwarves \
+          pahole
+
+    - name: Cache build artifacts (dl & toolchain)
+      uses: actions/cache@v4
+      with:
+        path: |
+          source/dl
+          source/staging_dir/toolchain-*
+        key: openwrt-cache-${{ runner.os }}-master-aarch64-nn6000v2
+        restore-keys: |
+          openwrt-cache-${{ runner.os }}-master-
+
+    - name: Update feeds
+      run: |
+        cd source
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: Confirm device exists in tree
+      run: |
+        cd source
+        # 保留这一步作为保险丝：如果哪天上游改名/移走了这个设备，
+        # CI 会在这里直接失败提醒你去检查，而不是悄悄编译出错误设备的固件。
+        grep -rl "link_nn6000-v2" target/linux/qualcommax/image/*.mk \
+          || { echo "!! 未在 target/linux/qualcommax/image/*.mk 中找到 link_nn6000-v2 定义，请检查设备名或上游是否再次变更"; exit 1; }
+
+    - name: Configure target, packages, and kernel options
+      run: |
+        cd source
+
+        # 1. 先写入目标设备选择，再跑 defconfig —— 顺序很重要！
+        #    如果先 defconfig 再追加设备选项，defconfig 会先选中某个默认设备，
+        #    之后追加的 DEVICE_link_nn6000-v2=y 不会正确替换掉它，
+        #    导致最终编译/打包的是错误设备的镜像（之前遇到的 8devices,mango-dvk 就是这么来的）。
+        rm -f .config
+        cat > .config <<EOF
+        CONFIG_TARGET_qualcommax=y
+        CONFIG_TARGET_qualcommax_ipq60xx=y
+        CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y
+        EOF
+
+        make defconfig
+
+        # 2. 现在再追加其余功能包和内核选项
+        #    注意：master 分支包管理器可能是 apk 也可能仍是 opkg，
+        #    下面这行如果在你拉到的快照里不是合法选项，oldconfig 会自动忽略，不会报错。
+        cat >> .config <<EOF
+        # ---- 包管理器（如果该快照默认是 apk 则显式启用，无效时会被 oldconfig 自动忽略） ----
+        CONFIG_PACKAGE_apk-mbedtls=y
+
+        # ---- LuCI 及中文 ----
+        CONFIG_PACKAGE_luci=y
+        CONFIG_PACKAGE_luci-base=y
+        CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+
+        # ---- 防火墙 (nftables) ----
+        CONFIG_PACKAGE_firewall4=y
+        CONFIG_PACKAGE_nftables=y
+
+        # ---- DNS ----
+        CONFIG_PACKAGE_dnsmasq-full=y
+
+        # ---- IPv6 ----
+        CONFIG_PACKAGE_ipv6helper=y
+        CONFIG_PACKAGE_odhcp6c=y
+        CONFIG_PACKAGE_odhcpd-ipv6only=y
+
+        # ---- DAED 所需的内核模块 ----
+        CONFIG_PACKAGE_kmod-sched-core=y
+        CONFIG_PACKAGE_kmod-sched-bpf=y
+        CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
+
+        # ---- eBPF / BTF 支持（启用 REDUCED 以缩小内核体积） ----
+        CONFIG_KERNEL_BPF=y
+        CONFIG_KERNEL_BPF_SYSCALL=y
+        CONFIG_KERNEL_BPF_JIT=y
+        CONFIG_KERNEL_CGROUP_BPF=y
+        CONFIG_KERNEL_DEBUG_INFO=y
+        CONFIG_KERNEL_DEBUG_INFO_BTF=y
+        CONFIG_KERNEL_DEBUG_INFO_REDUCED=y
+
+        # ---- XDP_SOCKETS（kmod-xdp-sockets-diag 依赖） ----
+        CONFIG_KERNEL_XDP_SOCKETS=y
+
+        # ---- 常用工具 ----
+        CONFIG_PACKAGE_curl=y
+        CONFIG_PACKAGE_ca-bundle=y
+        CONFIG_PACKAGE_ca-certificates=y
+        EOF
+
+        # 3. 使用 oldconfig 并自动接受默认值，解决依赖
+        yes "" | make oldconfig
+
+        # 4. 检查关键配置（调试用）—— 这里必须只出现 nn6000-v2 一个设备，不能有别的 DEVICE_xxx=y
+        echo "=== 设备支持列表 ==="
+        grep "^CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_" .config
+        echo "=== 内核大小相关配置 ==="
+        grep -E "CONFIG_KERNEL_DEBUG_INFO_REDUCED|CONFIG_KERNEL_DEBUG_INFO_BTF" .config || true
+
+    - name: Verify only the intended device is selected
+      run: |
+        cd source
+        DEVICE_COUNT=$(grep -c "^CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_.*=y" .config || true)
+        echo "选中的设备数量: $DEVICE_COUNT"
+        if [ "$DEVICE_COUNT" -ne 1 ]; then
+          echo "!! 检测到选中了 $DEVICE_COUNT 个设备（应为 1 个），请检查 .config，否则可能打出错误设备的固件"
+          grep "^CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_.*=y" .config
+          exit 1
+        fi
+        grep -q "^CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y" .config \
+          || { echo "!! link_nn6000-v2 未被选中"; exit 1; }
+
+    - name: Download and compile
+      run: |
+        cd source
+        make download -j4
+        make -j$(nproc) V=s
+
+    - name: Verify kernel module and BTF support
+      run: |
+        cd source
+        echo "=== 确认包管理器配置 ==="
+        grep -E "CONFIG_PACKAGE_apk|CONFIG_PACKAGE_opkg" .config || true
+        echo "=== BTF 配置 ==="
+        grep -E "CONFIG_KERNEL_DEBUG_INFO_BTF|CONFIG_KERNEL_XDP_SOCKETS" .config || true
+        echo "=== kmod-xdp-sockets-diag 编译产物 ==="
+        find build_dir -name "kmod-xdp-sockets-diag*" | head -5
+        echo "=== vmlinux (BTF info) ==="
+        find build_dir -name vmlinux | head -5
+        echo "=== 最终固件文件名（确认包含 link_nn6000-v2） ==="
+        ls -la bin/targets/qualcommax/ipq60xx/*sysupgrade.bin
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: NN6000-V2-OpenWrt-master-DAED
+        path: |
+          source/bin/targets/qualcommax/ipq60xx/*link_nn6000-v2*-sysupgrade.bin
+          source/bin/targets/qualcommax/ipq60xx/packages/
