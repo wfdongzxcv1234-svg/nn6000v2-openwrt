@@ -1,4 +1,4 @@
-name: Build ImmortalWrt NN6000 V2 DAED kmods (based on 25.12)
+name: Build OpenWrt NN6000 V2 DAED kmods (master snapshot)
 
 on:
   workflow_dispatch:
@@ -17,11 +17,18 @@ jobs:
         echo "=== 清理后磁盘空间 ==="
         df -h
 
-    - name: Clone ImmortalWrt (25.12 stable branch)
+    - name: Clone OpenWrt (master / snapshot branch)
       run: |
+        # link_nn6000-v2 的设备支持是 2026-03-21 才合并进 openwrt/openwrt 的 main 分支
+        # (PR #21787)，ImmortalWrt 的 openwrt-25.12 稳定分支还没有同步这个设备，
+        # 手动 backport patch 又因为树结构差异 git am 失败。
+        # 所以这里直接从官方 master（滚动开发分支，即 openwrt.ai/Kwrt 用的同一条线）拉源码，
+        # 设备定义原生就在，不需要任何手动 patch。
+        # 注意：master 是滚动快照，没有 25.12 稳定，个别包版本可能会随上游变动，
+        # 但目前是拿到这个设备支持最简单可靠的办法。
         git clone --depth=1 \
-        --branch openwrt-25.12 \
-        https://github.com/immortalwrt/immortalwrt.git source
+        --branch master \
+        https://github.com/openwrt/openwrt.git source
 
     - name: Install dependencies
       run: |
@@ -53,9 +60,9 @@ jobs:
         path: |
           source/dl
           source/staging_dir/toolchain-*
-        key: immortalwrt-cache-${{ runner.os }}-openwrt-25.12-aarch64
+        key: openwrt-cache-${{ runner.os }}-master-aarch64-nn6000v2
         restore-keys: |
-          immortalwrt-cache-${{ runner.os }}-openwrt-25.12-
+          openwrt-cache-${{ runner.os }}-master-
 
     - name: Update feeds
       run: |
@@ -66,21 +73,19 @@ jobs:
     - name: Confirm device exists in tree
       run: |
         cd source
-        # link_nn6000-v2 已经是 ImmortalWrt/OpenWrt 官方支持的设备（qualcommax/ipq60xx），
-        # 不需要手动修补 SUPPORTED_DEVICES 或 DTS compatible 字符串。
-        # 这里只是做一次确认，如果哪天上游改名/移除了，CI 会直接失败提醒你，而不是悄悄编译出错误设备。
+        # 保留这一步作为保险丝：如果哪天上游改名/移走了这个设备，
+        # CI 会在这里直接失败提醒你去检查，而不是悄悄编译出错误设备的固件。
         grep -rl "link_nn6000-v2" target/linux/qualcommax/image/*.mk \
-          || { echo "!! 未在 target/linux/qualcommax/image/*.mk 中找到 link_nn6000-v2 定义，请检查设备名或上游是否变更"; exit 1; }
+          || { echo "!! 未在 target/linux/qualcommax/image/*.mk 中找到 link_nn6000-v2 定义，请检查设备名或上游是否再次变更"; exit 1; }
 
     - name: Configure target, packages, and kernel options
       run: |
         cd source
 
         # 1. 先写入目标设备选择，再跑 defconfig —— 顺序很重要！
-        #    如果先 defconfig 再追加设备选项，defconfig 会先选中某个默认设备
-        #    (你之前遇到的 8devices,mango-dvk / mango 就是这么来的)，
+        #    如果先 defconfig 再追加设备选项，defconfig 会先选中某个默认设备，
         #    之后追加的 DEVICE_link_nn6000-v2=y 不会正确替换掉它，
-        #    导致最终编译/打包的是错误设备的镜像。
+        #    导致最终编译/打包的是错误设备的镜像（之前遇到的 8devices,mango-dvk 就是这么来的）。
         rm -f .config
         cat > .config <<EOF
         CONFIG_TARGET_qualcommax=y
@@ -91,8 +96,10 @@ jobs:
         make defconfig
 
         # 2. 现在再追加其余功能包和内核选项
+        #    注意：master 分支包管理器可能是 apk 也可能仍是 opkg，
+        #    下面这行如果在你拉到的快照里不是合法选项，oldconfig 会自动忽略，不会报错。
         cat >> .config <<EOF
-        # ---- 包管理器（25.12 默认是 apk，显式启用） ----
+        # ---- 包管理器（如果该快照默认是 apk 则显式启用，无效时会被 oldconfig 自动忽略） ----
         CONFIG_PACKAGE_apk-mbedtls=y
 
         # ---- LuCI 及中文 ----
@@ -166,8 +173,8 @@ jobs:
     - name: Verify kernel module and BTF support
       run: |
         cd source
-        echo "=== 确认 apk 包管理器配置 ==="
-        grep "CONFIG_PACKAGE_apk" .config || echo "apk 未显式开启，请检查"
+        echo "=== 确认包管理器配置 ==="
+        grep -E "CONFIG_PACKAGE_apk|CONFIG_PACKAGE_opkg" .config || true
         echo "=== BTF 配置 ==="
         grep -E "CONFIG_KERNEL_DEBUG_INFO_BTF|CONFIG_KERNEL_XDP_SOCKETS" .config || true
         echo "=== kmod-xdp-sockets-diag 编译产物 ==="
@@ -180,7 +187,7 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: NN6000-V2-ImmortalWrt-25.12-DAED
+        name: NN6000-V2-OpenWrt-master-DAED
         path: |
           source/bin/targets/qualcommax/ipq60xx/*link_nn6000-v2*-sysupgrade.bin
           source/bin/targets/qualcommax/ipq60xx/packages/
